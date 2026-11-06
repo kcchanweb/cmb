@@ -1,0 +1,19 @@
+# Initial reviewed events schema
+
+Task: resume schema building after the user reviewed the README source fields and added a UUID table identifier, accepting the rest.
+
+Implemented app/db/migrations/001_create_events.sql: public.events has generated UUID id primary key; unique nonblank text message_id; nonblank event_type/event_name/device_id; required finite occurred_at; nullable finite received_at; nullable text user_id; nullable object-constrained JSONB properties/context. UUID is internal and does not replace upstream messageId. No delivery state, user/profile table, raw-payload/traits retention, or HTTP intake was invented. Context may include reviewed advertising metadata; privacy/logging/sharing guardrails remain.
+
+Migration is psql-driven, transactional, guarded by a migration version table and advisory lock, with lock/statement timeouts; repeated application is a no-op. Root db-migrate copies SQL into the DB container then executes it as the non-superuser app role. No auto-up migration, reset, down migration, or source data seed is added. All source/runtime support stays under app/ except the root Makefile entry point.
+
+Added 24 real-PostgreSQL regression checks in app/test/schema.integration.mjs and schema-test Docker target plus compose.test.yaml. Tests run in a temporary container on the existing network and roll back synthetic records. The normal API image/tag and API behavior remain unchanged. Actual tested: UUID defaults/distinctness, text ID flexibility, uniqueness/PK violations, required and whitespace constraints, numeric/UUID/anonymous users, timestamps and JSONB round trips, nullable metadata, invalid JSON object shapes, and infinite times.
+
+Verified initial migration in a new isolated DB owned by the app role, reapplication with exactly one version, all24 checks and zero remaining rows. Applied identical migration to the running POC DB, inspected all10 event columns/defaults, then passed all24 checks there and confirmed zero rows. Removed only the isolated test DB and temporary test containers/files. Main DB volume retained and API ready. No vendor events were sent.
+
+Direct redirected Docker exec commands encountered sandbox socket denial; copying the migration to the regular DB filesystem and executing by filename worked. An attempted copy into API tmpfs was not visible through docker cp; final test workflow builds a separate minimal image instead. No approval review was rejected and no permission request was needed.
+
+Docs aligned: data-model authority/field mapping, README commands, AGENTS context, tech stack, infrastructure/environment, API probe caveat, PRD scope, testing/demo plans, decisions, changelog and state/provenance. Reviewed field list and UUID request are user evidence; SQL naming/nullability is the documented implementation choice, not a newly accepted full HTTP contract.
+
+Serial reviews: Security (parameterized values, controlled test identifiers, no raw payload/credential logging, sensitive context retained only in private DB); Performance (only PK/unique indexes, no speculative JSONB indexes, finite migration/pool times); Logic (source identity split, required/optional fields, JSON null versus SQL NULL, finite instants, version/no-op and rollback behavior); Architecture (source-only additive migration, no queue or new framework, no implication of complete dispatch deduplication/recovery). No blocking findings.
+
+Validation: shared validator zero errors with expected open HTTP/testing placeholders; base/test Compose config quiet validation passed; Makefile recipes dry-run under app/ verified. No application TypeScript changes required repeating unchanged health tests. Data phase in_progress; architecture/setup remain in_progress; incoming contract phase unstarted. Remaining: incoming API contract, delivery ledger/claim ownership/recovery, retention/access policy, application integration and complete duplicate-send prevention.
