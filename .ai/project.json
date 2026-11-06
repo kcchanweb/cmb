@@ -19,9 +19,9 @@
       "evidence": "User reviewed README fields and requested UUID row identity; initial events migration implemented/applied with 24 passing PostgreSQL checks. Delivery state, retention and intake-dependent model remain open."
     },
     "design-contracts": {
-      "status": "not_started",
+      "status": "in_progress",
       "blockers": [],
-      "evidence": ""
+      "evidence": "Explicit event API request implemented in app/contracts/openapi.json and routes; no unrelated production acceptance inferred."
     },
     "setup-dev": {
       "status": "in_progress",
@@ -114,20 +114,26 @@
       "value": "docs/data-model.md and app/db/migrations/001_create_events.sql",
       "source": "recommended",
       "evidence": "Implements reviewed fields plus UUID id; text message_id unique, JSONB objects, timestamptz instants. Applied/tested as bounded source-storage work; no delivery schema or incoming API contract acceptance inferred."
+    },
+    "event_api_request": {
+      "value": "Build intake based on README/sample: dedup, insert DB, directly forward to vendor.",
+      "source": "user",
+      "evidence": "Current explicit implementation request; status/retry and delivery-state choices recorded in docs."
+    },
+    "poc_wrap": {
+      "value": "Finish within2minutes; document pending tests in poc.md and update README run/test instructions.",
+      "source": "user",
+      "evidence": "Current wrap-up steering."
     }
   },
   "deferred": [
     {
-      "topic": "SQS, fan-out, Lambda, DLQ, batching and background consumers",
-      "reason": "User excludes them from the direct-call POC."
+      "topic": "Queues/fan-out/Lambda/DLQ/background consumers",
+      "reason": "Excluded from this POC."
     },
     {
-      "topic": "Product integration/E2E tooling and optional formatter/linter",
-      "reason": "Infrastructure uses pinned Node built-in tests and tsc; event pipeline remains unimplemented."
-    },
-    {
-      "topic": "Incoming HTTP schema/auth/response contracts, dispatch/delivery state and recovery, retention/access policy",
-      "reason": "Initial source-event storage is implemented; these requirements were not finalized by the source-field review."
+      "topic": "Extended load/platform/physical-fault tests and production security/retention/ops",
+      "reason": "Documented explicitly in poc.md; core pipeline tests passed."
     }
   ],
   "verification": [
@@ -143,8 +149,8 @@
     },
     {
       "check": "application_behavior",
-      "status": "not_run",
-      "evidence": "Full event ingestion/normalization/deduplication/delivery/recovery is not implemented; skeleton tests are separate."
+      "status": "passed",
+      "evidence": "17 unit/HTTP tests,24 schema checks,10 real PostgreSQL/HTTP scenarios, strict live vendor one-send-for-six-duplicates smoke; user event delivered after configured500 recovery."
     },
     {
       "check": "container_host_connectivity",
@@ -174,7 +180,7 @@
     {
       "check": "final_structure",
       "status": "passed",
-      "evidence": "Canonical validator zero errors with intentional remaining HTTP/testing placeholders. Base/test Compose config valid; root db-migrate/test-db recipes dry-run resolve under app/. POC events row count zero after tests."
+      "evidence": "Structural validator and explicit OpenAPI refs/example/semantic document headings checked at handoff."
     },
     {
       "check": "vendor_contract_example",
@@ -190,6 +196,11 @@
       "check": "serial_schema_reviews",
       "status": "passed",
       "evidence": "Security, Performance, Logic, Architecture reviewed serially: parameterized synthetic tests/private sensitive context; only UUID/unique-ID indexes; transaction/version/null/JSON/time semantics and rollback checks; reviewed source-only scope and no HTTP/delivery ownership claims. No blocking findings."
+    },
+    {
+      "check": "api_serial_reviews",
+      "status": "passed",
+      "evidence": "Security\u2192Performance\u2192Logic\u2192Architecture serial review. Fixed Unicode/null-byte boundary and trace typing; verified bounds, commit-before-send, claims/partial failures, scope and corrected cross-file doc-buffer error."
     }
   ],
   "seed_files": {

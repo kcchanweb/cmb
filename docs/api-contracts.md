@@ -8,7 +8,7 @@ API base URL: http://127.0.0.1:3000. Local host-loopback exposure is the POC acc
 
 ## Supplied vendor contract and example
 
-The user's supplied [vendor contract snapshot](vendor-payload-contract.json) is the destination contract. It is descriptive JSON, not an executable JSON Schema. The [sample request](vendor-request.example.json) is the body sent to the vendor's POST /events. Neither file defines the relay's still-unselected intake request/response contract.
+The user's supplied [vendor contract snapshot](vendor-payload-contract.json) is the destination contract. It is descriptive JSON, not an executable JSON Schema. The [sample request](vendor-request.example.json) is the body sent to the vendor's POST /events. Neither is the incoming relay DTO; the implemented source-event contract is linked below.
 
 Only these exact, case-sensitive event names are eligible for forwarding: purchase, complete_registration, subscription_started, credits_spent, match_created, message_sent, push_opened. This explicitly supersedes the earlier all-valid-event-names policy. Do not rename event_name or forward other names, even when the local stub accepts their shape. How an ineligible input is acknowledged/stored remains a data/intake-contract decision; it must not be mistaken for successful vendor delivery.
 
@@ -86,7 +86,7 @@ The machine-readable specification linked above replaces the former empty-path s
 
 ## Asynchronous message contracts
 
-Current POC: no asynchronous messaging boundary; the user explicitly excluded queues, workers, and fan-out. Do not add message schemas for this slice. Intake duplicate/conflict responses and explicit retry/recovery flows still require design. The following guidance is for a future asynchronous scope only.
+Current POC: no asynchronous messaging boundary; the user explicitly excluded queues, workers, and fan-out. Do not add message schemas for this slice. Intake duplicate/conflict responses and explicit retry/recovery are implemented by the local contract above. The following guidance is for a future asynchronous scope only.
 
 Future status: TBD. If jobs/events are part of the design in [infrastructure.md](infrastructure.md), define each message's name/version, producer, consumer, payload schema and sanitized example before implementing either side. Identify correlation, duplicate/idempotency handling, ordering/delivery assumptions, and compatible schema evolution where applicable. Distinguish enqueue acknowledgement from completed work, including result/status and failure responses exposed through HTTP or other boundaries. Keep infrastructure retry/failure policy in infrastructure.md and schema/storage design in [data-model.md](data-model.md).
 

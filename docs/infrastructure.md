@@ -1,68 +1,36 @@
-# Local environment and configuration
+# POC infrastructure and direct delivery
 
-API and PostgreSQL run in separate containers on one Compose bridge network; the vendor runs on the host. Compose and app source live in app/. Run make commands from the project root; underlying commands execute from app/.
+Implemented topology: Node.js/Express API and PostgreSQL containers share one Compose bridge network; the unchanged Python vendor runs on the host. The POC override in DESIGN.md excludes fan-out, SQS, Lambda, DLQ, batching and background consumers. All new runtime source/support lives under app/; root Makefile is the entry point.
 
-make init creates app/.env once with distinct random 64-character hexadecimal database passwords and mode 0600. make up invokes it automatically. Existing configuration is preserved. app/.env is ignored by Git and excluded from the Docker build context. app/.env.example is a sanitized template, not a credential source for shared deployment.
+```mermaid
+flowchart LR
+    Client --> API[Express API]
+    API -->|Commit source and delivery record| DB[(PostgreSQL)]
+    API -->|Direct normalized HTTP after commit| Vendor[Host vendor.py :9000]
+    API -->|Token-guarded outcome| DB
+    DB --- Volume[Persistent named volume]
+```
 
-| Variable | Type / validation | Source / default | Secret? |
-| --- | --- | --- | --- |
-| POSTGRES_PASSWORD | Nonempty string | Generated app/.env; PostgreSQL bootstrap administrator only | Yes |
-| APP_DB_PASSWORD | Nonempty string | Generated app/.env; initializes event_relay_app and supplies API PGPASSWORD | Yes |
-| API_PORT | Host TCP port 1–65535 | app/.env; 3000; published only on 127.0.0.1 | No |
-| VENDOR_BASE_URL | HTTP(S) origin; no credentials, path beyond /, query, or fragment | app/.env; http://host.docker.internal:9000 | No; must never contain credentials |
-| NODE_ENV | String | Compose sets production | No |
-| PORT | Integer 1–65535 | Compose sets 3000, API binds 0.0.0.0 within container | No |
-| PGHOST | Nonempty string | Compose sets db | No |
-| PGPORT | Integer 1–65535 | Compose sets 5432 | No |
-| PGDATABASE | Nonempty string | Compose sets event_relay | No |
-| PGUSER | Nonempty string | Compose sets event_relay_app (non-superuser) | No |
-| PGPASSWORD | Nonempty string | Compose supplies APP_DB_PASSWORD to API | Yes |
-| POSTGRES_DB | Nonempty string | Compose sets event_relay for DB initialization | No |
-| POSTGRES_USER | Nonempty string | Compose sets postgres for DB bootstrap; never the API user | No |
+## Addresses and startup
 
-The API validates its runtime settings before listening. The pool is bounded to 5 connections with 2-second connection timeout, 10-second idle timeout, 3-second statement timeout and 3.5-second client query timeout. The read-only vendor probe has a 3-second total timeout and does not follow redirects. These are infrastructure controls, not a product delivery policy.
+API listens on0.0.0.0:3000 inside its container; only host127.0.0.1:3000 is published. Database is db:5432 on the shared bridge and has no published host port. The API uses http://host.docker.internal:9000 for the host vendor. Container127.0.0.1 refers to that container, not the host. Docker Desktop provides the host alias; optional compose.linux.yaml supplies host-gateway mapping for plain Linux Engine. Linux routing was not runtime-tested.
 
-## Persistence and credentials
+The fixed vendor binds host127.0.0.1 and supports --port only. Direct reachability from the API was verified on this Docker Desktop installation. A restricted host TCP forwarder is a conditional fallback on installations where the loopback listener is not reachable; do not edit vendor.py or expose its control endpoints publicly. Do not switch to host networking or an internal-only bridge as an accidental workaround. See [Docker networking](https://docs.docker.com/compose/how-tos/networking/).
 
-The PostgreSQL 18 named volume mounts at /var/lib/postgresql. db/init-app-role.sql runs only when that volume is first initialized; it creates the non-superuser application role and grants database/schema access. It creates no event tables; the reviewed source-event schema is applied separately by make db-migrate. That migration is transactional and version-guarded, so it also upgrades an existing volume without recreating it. Do not remove app/.env while retaining the volume: generating new passwords does not rotate passwords in an existing database. Rotate explicitly through PostgreSQL if needed; never discard the volume as an ordinary troubleshooting step.
+make up creates ignored local credentials once, starts/waits for DB, runs versioned migrations001/002 as the non-superuser application role, then builds/starts the non-root read-only API. profiles.json is mounted read-only and validated once at startup. Readiness checks source/delivery table columns; vendor availability does not control DB readiness. Ordinary shutdown preserves the named volume. API shutdown has20-second drain limit and25-second Compose grace.
 
-Use make psql to inspect the database without publishing its port. Ordinary make down preserves the named volume. Destructive volume deletion is never part of ordinary stop/start commands.
+## Persistence, deduplication and delivery
 
-## Vendor routing
+POST /events validates one README source event, constructs its canonical retained-source hash and safe vendor projection, and commits events/event_deliveries in one short transaction. INSERT ON CONFLICT plus the unique message_id distinguishes new intake, identical duplicates and409 changed-content conflicts. Duplicates reuse saved state without initiating dispatch. Existing source rows without delivery metadata are protected reconciliation cases.
 
-Start the fixed host process with make vendor in a separate terminal. Docker Desktop supplies host.docker.internal. The API uses http://host.docker.internal:9000; localhost inside api refers to api, not the host. See [infrastructure.md](infrastructure.md) for the loopback-binding caveat. make vendor-check performs only GET /_stats from the API container and requires strict=true; it never sends events or changes vendor controls.
+Only new eligible events dispatch directly. Ineligible names are stored as skipped. Each sender claims a60-second UUID token in a short atomic update; each attempt records current ownership durably, then releases DB work before HTTP. Frozen payloads and unchanged messageIds survive retries/profile changes. Outcomes update only under the current token; a stale owner cannot overwrite newer results.
 
-For plain Linux Engine, use the optional app/compose.linux.yaml override to map the host gateway. A loopback-only host listener may still require the restricted host relay described in infrastructure.md. Override VENDOR_BASE_URL to the relay's origin only when required; document its actual binding and cleanup. Do not make vendor controls publicly reachable.
+Known transient failures retry at most3 times by default with2-second attempt timeout and bounded jitter/rate-limit waits under a15-second processing cancellation budget.400/422 and other permanent rejections are terminal. HTTP acceptance with an unknown/lost response or failed outcome recording remains uncertain/sending; PostgreSQL cannot atomically include an external HTTP side effect.
 
-Local HTTP is intentional for the exercise. Production secrets delivery, TLS, retention, and public access are outside this bounded setup.
+GET /events/:id exposes safe status. POST /events/:id/retry is the explicit queue-free recovery trigger for pending/transient/uncertain work and expired claims. No scheduler automatically drains records. Replayed calls retain vendor idempotency identity; exactly-once network delivery is not promised. See [contracts](api-contracts.md), [data model](data-model.md), and [interactions](interactions.md).
 
-## Event API settings
+## Safety, bounds and observation
 
-| Variable | Default / validation | Purpose |
-| --- | --- | --- |
-| PROFILES_PATH | /app/data/profiles.json; readable valid lookup file, max1MiB | Compose mounts root profiles.json read-only. Loaded and validated once at startup; invalid/unavailable source fails startup rather than acting as an empty map. |
-| VENDOR_TIMEOUT_MS | 2000; integer20–5000 | Timeout for each direct vendor attempt. |
-| VENDOR_MAX_ATTEMPTS | 3; integer1–5 | Per-request attempt bound; durable attempts remains cumulative across explicit retries. |
-| REQUEST_TIMEOUT_MS | 15000; integer1000–20000 | Processing cancellation budget; cancels vendor calls/backoff. DB operations/final outcome recording are separately bounded/awaited. |
+Keep the DB private, app role non-superuser, API non-root, credentials out of images/logs, SQL values parameterized and the vendor destination configuration-controlled. Raw context/traits/contact data never enter logs or outbound metadata. Body64KiB, nesting20, response8KiB, pool5 and active event routes16 are bounded. Transaction timeout5seconds and lock timeout1second protect intake; no transaction/row lock spans HTTP or backoff. Correlation UUID headers, safe outcome codes, attempt counts, internal event UUIDs and durations provide observation without logging raw source data.
 
-Fixed controls:64KiB JSON body, nesting20, vendor response8KiB,16 active event routes, retry jitter base100ms/cap1000ms and rate-limit waits capped5seconds within cancellation budget,60-second claim lease. API drains up to20seconds on shutdown; Compose grace25seconds. These are POC implementation choices recorded with the user's explicit build request, not production SLO claims.
-
-Before API startup, migrations001/002 must exist; readiness checks access to the source/delivery tables and columns. make up orchestrates DB readiness → migrations → API startup; health remains independent. Changing a local .env setting takes effect after recreating api. No application setting may be sourced from an incoming request, especially the vendor URL.
-
-## Implemented event endpoint checks
-
-Actual results:17 unit/HTTP/config tests pass on host Node and pinned Node24, plus10 real-PostgreSQL/HTTP integration scenarios (11 node:test entries including parent). Coverage includes all seven allowed names, projection/privacy, numeric/mapped/missing/anonymous IDs, real calendar/timestamp validation and microsecond canonicalization, invalid body/Unicode/depth/types, same-content identity, conflict rejection, admission overload, bounded vendor retries/rate delays, invalid/oversized acknowledgements and permanent failure classification.
-
-make test now invokes the selected unit, schema and isolated integration suites. make test-integration uses scripts/test-integration.py to create a fresh app-owned DB, apply001/002, run the integration-test Docker target against a test HTTP vendor, and forcibly drop only its own DB in finally. No host-vendor controls or user records are changed by that automated suite.
-
-The integration scenarios verify: eight identical concurrent requests → one row/one vendor call; safe status/409 conflict; mapped/unmatched/anonymous delivery; persisted skip; terminal422; transient retention plus explicit retry using a frozen profile mapping;429/timeouts; a deferred failed COMMIT with zero sends; accepted vendor plus failed outcome write without duplicate intake resend; pending/expired claim recovery with stale-token rejection; and protected legacy rows. All SQL fault triggers run only in the isolated test DB.
-
-A separate smoke check against an unchanged strict vendor.py instance on host19001 passed: six concurrent source requests produced one source row, one accepted vendor delivery, zero schema rejections, and zero duplicate vendor deliveries. That opt-in smoke script retains its synthetic source record. The main host vendor9000 was in500 mode; actual API verification retained its three failed attempts and returned the same record on duplicate requests, including after an API process restart. Source rows created by user curls were preserved. Global vendor counters include other user activity; dedup evidence is tied to each event and its durable attempt count.
-
-Full pipeline tests use Node core HTTP/test and the existing pg dependency; no added framework/queue/cloud service is required. Public deployment/auth, production load/SLOs and retention/delete policies have not been tested or implemented. Remaining historical planned sections above are superseded where these actual checks now provide coverage.
-
-## Current direct-delivery runtime
-
-POST /events consumes one README source event. EventRepository atomically inserts source/delivery records and compares canonical fingerprints before dispatch. EventService sends only new eligible events and serves duplicates from durable state. VendorClient owns bounded retry/cancellation, configured-origin projection, and acknowledgement validation. GET /events/:id and POST /events/:id/retry expose status/explicit recovery; no background consumer exists.
-
-Compose now mounts profiles.json read-only, passes bounded event settings, and grants25-second stop grace. Root make up starts DB, applies both versioned migrations, then builds/starts api. /ready proves table/column access, not vendor availability. Integration tests use separate disposable DBs and a test vendor; live strict-stub smoke succeeded with one send for six concurrent duplicates. The existing host vendor9000's injected500 state was preserved during verification and failures remained stored. This is operational failure handling, not a payload422 error.
+Actual checks: healthy containers; real app-role DB access; persisted source schema;17 unit/HTTP tests;24 schema checks;10 PostgreSQL/HTTP integration scenarios; strict vendor smoke with six concurrent requests and one vendor delivery; retained failures and dedup after API restart. When the user reported connectivity trouble, GET /_stats from inside api returned200 with mode500. Restoring modeok and explicitly retrying the user's saved event produced delivered/vendor200 on cumulative attempt4. The alias was working; no URL rewrite or local relay was necessary. Pending extended checks and test-process cleanup are in [poc.md](../poc.md).

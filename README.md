@@ -55,6 +55,26 @@ The automated pipeline tests use a separate temporary database and an HTTP test 
 
 See [decisions](docs/decisions.md), [testing evidence](docs/testing.md), and [AGENTS.md](AGENTS.md). .ai/project.json records facts and phase status without treating the explicit implementation request as acceptance of unrelated production designs. Local sanitized handoffs follow [.ai/config.json](.ai/config.json). Public deployment/auth, retention/deletion policy, and production operations remain outside this local POC.
 
+## Validate vendor receipt
+
+For an identified event, the vendor itself records accepted message IDs:
+
+```sh
+curl -s http://localhost:9000/_order | python3 -m json.tool
+curl -s http://localhost:9000/_stats | python3 -m json.tool
+```
+
+Look for your messageId under customer_user_id (for example987654). /_stats shows aggregate events_received, unique_message_ids and duplicates; events_received includes duplicates. The API status endpoint separately shows delivered/vendorStatus200. Anonymous events are not grouped by customer in /_order; use their saved acknowledgement plus aggregate counters.
+
+If the vendor is deliberately set to500, restore it and retry the EXISTING event:
+
+```sh
+curl -X POST http://localhost:9000/_control -H 'Content-Type: application/json' -d '{"mode":"ok"}'
+curl -X POST http://localhost:3000/events/EVENT_UUID/retry
+```
+
+See [poc.md](poc.md) for actual test results, deferred checks and operational cleanup. The container URL remains host.docker.internal;127.0.0.1:9000 is the host-terminal address.
+
 ## Original exercise seed
 
 Everything here is **Python 3.9+ standard library only**. Nothing to install, no Docker,
