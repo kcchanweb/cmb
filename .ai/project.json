@@ -1,0 +1,148 @@
+{
+  "schema_version": 2,
+  "template_version": "2.0.0",
+  "mode": "standard",
+  "phases": {
+    "init-project": {
+      "status": "complete",
+      "blockers": [],
+      "evidence": "User explicitly replied accept on 2026-11-06 to the reviewed product scope, normalization policies, and acceptance criteria in docs/prd.md."
+    },
+    "design-architecture": {
+      "status": "in_progress",
+      "blockers": [],
+      "evidence": "User supplied DESIGN.md then selected direct API-to-PostgreSQL-to-vendor POC, API/database containers on one network with host vendor, and deduplication; stack/infra/guardrails updated, exact tools and budgets remain open."
+    },
+    "design-data": {
+      "status": "not_started",
+      "blockers": [],
+      "evidence": ""
+    },
+    "design-contracts": {
+      "status": "not_started",
+      "blockers": [],
+      "evidence": ""
+    },
+    "setup-dev": {
+      "status": "not_started",
+      "blockers": [],
+      "evidence": ""
+    }
+  },
+  "time_budget_minutes": null,
+  "environment": {
+    "kind": "hybrid",
+    "execution": "undecided"
+  },
+  "answers": {
+    "product_goal": {
+      "value": "Create an API endpoint that accepts events, and writes to Postresql db, and normalizes the data and pushes to an API endpoint.",
+      "source": "user",
+      "evidence": "Initial init-project request."
+    },
+    "future_stack_preference": {
+      "value": "Tech stack: node.js/typescript, psql.",
+      "source": "user",
+      "evidence": "Initial request, preserved verbatim; not architecture acceptance."
+    },
+    "exercise_constraints": {
+      "value": "Fixed vendor.py; strict validation enabled; preserve messageId through transformations and retries.",
+      "source": "repository",
+      "evidence": "README.md and vendor.py inspected 2026-11-06."
+    },
+    "product_baseline": {
+      "value": "Accepted all-valid-events forwarding, occurrence-time normalization, mapped customer IDs or device-only attribution, outbound allowlist, visible outcomes and recoverable unfinished work.",
+      "source": "recommended",
+      "evidence": "docs/prd.md; recommended baseline accepted by the user\u2019s explicit \u201caccept\u201d reply on 2026-11-06."
+    },
+    "product_baseline_acceptance": {
+      "value": "accept",
+      "source": "user",
+      "evidence": "2026-11-06 reply accepting the reviewed product scope, rules and acceptance criteria in docs/prd.md; does not accept later designs."
+    },
+    "poc_processing_topology": {
+      "value": "For the POC, however, we'll ignore the pan out and queues, only focused on building: api endpoint > db and direct vendor api calls.",
+      "source": "user",
+      "evidence": "2026-11-06 request to derive tech stack, infrastructure and guardrails from DESIGN.md; interpreted pan out as fan-out."
+    },
+    "poc_container_topology": {
+      "value": "For the database, use psql in a docker container, the api layer in node.js should also be in its container, all under the same network, but it needs to be able to intereact with the \"vendor\" api that runs on the local host.",
+      "source": "user",
+      "evidence": "2026-11-06 steering; PostgreSQL server and psql CLI distinguished in docs/tech-stack.md; host routing in docs/infrastructure.md."
+    },
+    "deduplication_requirement": {
+      "value": "One of the rules in deciding whether to send the event to vendor is deduplication; the event needs to have unique identifier and should not send the same event.",
+      "source": "user",
+      "evidence": "2026-11-06 steering; docs/prd.md AC-10/AC-11 and database messageId identity guardrails."
+    },
+    "poc_guardrails": {
+      "value": "Commit before vendor side effects, short transactions, durable deduplication, explicit uncertain outcomes, bounded retry/resource budgets, private container networking and unchanged strict vendor.",
+      "source": "recommended",
+      "evidence": "User asked for context-specific guardrails; docs/guardrails.md and docs/infrastructure.md. Exact mechanisms and budgets remain open."
+    }
+  },
+  "deferred": [
+    {
+      "topic": "SQS, fan-out, Lambda, DLQ, batching and background consumers",
+      "reason": "User explicitly excludes them from the direct-call POC; DESIGN.md remains future reference."
+    },
+    {
+      "topic": "Exact stack/tool versions, tests, auth and request/retry/resource budgets",
+      "reason": "Architecture in progress; resolve before dependent setup or implementation."
+    },
+    {
+      "topic": "Schema, intake responses, concurrent delivery ownership and explicit recovery trigger",
+      "reason": "Data/contracts phases remain unstarted; durable state does not imply automatic recovery."
+    }
+  ],
+  "verification": [
+    {
+      "check": "product_scaffold_structure",
+      "status": "passed",
+      "evidence": "validate.py completed with zero errors; intentional placeholders remain for unstarted future phases and unused lessons/framework guidance."
+    },
+    {
+      "check": "serial_document_reviews",
+      "status": "passed",
+      "evidence": "Security, Performance, Logic, Architecture reviewed serially for the POC documentation. Checked privacy/host relay scope, bounded request/retry resources, commit/dedup/uncertain outcome semantics, and queue-free container/host boundaries. No unresolved blocking documentation findings; detailed implementation decisions remain explicit."
+    },
+    {
+      "check": "application_behavior",
+      "status": "not_run",
+      "evidence": "No application implementation or configured application tests exist in this phase."
+    },
+    {
+      "check": "architecture_document_structure",
+      "status": "passed",
+      "evidence": "validate.py returned zero errors; DESIGN.md local links and code-fence balance checked. Expected unselected-tooling/future-design placeholders and no-Compose warning remain because setup is unstarted."
+    },
+    {
+      "check": "container_host_connectivity",
+      "status": "not_run",
+      "evidence": "Documentation update only. vendor.py loopback bind verified by source inspection; actual Docker-to-host route and any TCP relay remain for setup."
+    }
+  ],
+  "seed_files": {
+    ".ai/config.json": "085978ff85e389ae6dbf47bd0f644fe6f12f073e9b8dbaa350349e13fbd4626a",
+    ".ai/sessions/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".gitignore": "0f7415c4817c33ef60d4a55400e6d3da244b3d54a262f6a50072494d0abe808b",
+    "AGENTS.md": "006fee6746dfa2d3553d7946437e16c453abbc9d30e7257543f31530d4ac7ded",
+    "CHANGELOG.md": "b760a67becb296ee0bf02234d856430fc803e06fd014fa55a26adc9cf94e5d85",
+    "Makefile": "80e187a1e5397018a3321d3d368e64fd15b1e5a66b127f79902a190ee3677016",
+    "app/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/agent-roles.md": "ac21fc4b31e5755bc078c3c6a28853c5ab6846f220d070323b06ea51def321b5",
+    "docs/api-contracts.md": "6aa3da20ab55b487ebfacdca19a4ca4827432602e6048780296321e8090c2409",
+    "docs/data-model.md": "6dd6b83c8a74c04c0a1573fd08ace5718c8f7a21f3be8e8b76fac1a88570af28",
+    "docs/decisions.md": "6236e064295418d3f07a86b9aea8377910743b05b11eeef3c0967b5d23cafe19",
+    "docs/demo.md": "0110fb0acd8f44fc1b5af24c0e60049a5585e1e83a1cf4b1cb9b01a9a259833d",
+    "docs/environment.md": "32d91c797bd7f454697603ee23bfcfd51083ad448d31a5059034edad58423f2f",
+    "docs/guardrails.md": "fef69fd85b1e3fd444f23265a8d92fd2082936740192ead19fb7efd0e2424eee",
+    "docs/infrastructure.md": "418b6855a7853ccbe2789d221ba35944b70e22d0d723de949b42c3338d163a82",
+    "docs/interactions.md": "e0bc342d1fc6c9e389485f7b7c897c133d0d295172b680ee6194c96be03a99b0",
+    "docs/lessons.md": "94968d68b55617e953d3be6685088b6e23bebc7e63744c3d27393750ca8b2859",
+    "docs/prd.md": "3c8527b2cfab67c3581c62fe6562fc842e68ec33c2c0c2b97809cbc86e347ca7",
+    "docs/tech-stack.md": "7167d7d3399147f3e342555783eb0739a8a5c2856f91ccd27c88040897eb7b54",
+    "docs/testing.md": "1c00a70d07aa02719e43e2a0046c716eb0d319500ae1672dfe73d6e786b5a588",
+    "docs/workflows.md": "9eecb578803cf0db7c7745ffc3ffbad9b62a7f842794876a889efa45fb05358e"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "sessionLogging": {
+    "enabled": true,
+    "format": "markdown",
+    "destination": ".ai/sessions/"
+  }
+}

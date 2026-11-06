@@ -1,0 +1,12 @@
+# Local task summaries; retain the directory placeholder.
+.ai/sessions/*
+!.ai/sessions/.gitkeep
+
+# Local environment values; allow sanitized examples.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# macOS filesystem metadata.
+.DS_Store
