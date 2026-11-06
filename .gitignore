@@ -10,3 +10,9 @@
 
 # macOS filesystem metadata.
 .DS_Store
+
+# Application dependencies and build outputs.
+app/node_modules/
+app/dist/
+app/coverage/
+*.log

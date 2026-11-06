@@ -1,0 +1,6 @@
+# Optional override for plain Linux Docker Engine. Docker Desktop supplies the
+# host alias automatically. Host listener/relay binding must still be verified.
+services:
+  api:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

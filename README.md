@@ -2,13 +2,37 @@
 
 Project goal: accept events through an API, retain them in PostgreSQL, normalize them, and forward them to the fixed vendor API. Selected POC stack/topology: Node.js/TypeScript API container and PostgreSQL container on one Compose network, with direct calls to the vendor running on the host. Persist and deduplicate by messageId before vendor delivery.
 
-**Status:** product baseline accepted in [docs/prd.md](docs/prd.md); init-project complete. Architecture is in progress; the POC topology is selected. Data design, intake contracts, environment setup, and implementation are unstarted. Initialization creates documentation only; it does not make the project implementation-ready. The original exercise seed below is preserved.
+**Status:** product baseline accepted in [docs/prd.md](docs/prd.md); init-project complete. Architecture is in progress; the POC topology is selected. Initial event storage is implemented from the reviewed fields plus a UUID row key; broader data/delivery design is in progress and the incoming event HTTP contract remains open. The explicitly requested Compose setup and Express/TypeScript health skeleton are implemented; the event pipeline is still pending. Initialization creates documentation only; it does not make the project implementation-ready. The original exercise seed below is preserved.
 
 See [POC stack](docs/tech-stack.md), [infrastructure](docs/infrastructure.md), [guardrails](docs/guardrails.md), [decisions](docs/decisions.md), [demo goals](docs/demo.md), and [AGENTS.md](AGENTS.md). Phase state and provenance are in `.ai/project.json`. The [logging policy](.ai/config.json) enables sanitized local Markdown summaries under `.ai/sessions/`, ignored by Git; this is not automatic transcript capture.
 
-The root Makefile contains guarded hooks. Application install/start/build/test commands are not configured. Future runnable source/support belongs under `app/`; the selected Compose configuration belongs at `app/compose.yaml` when setup is implemented. Run future make commands from the root; recipes execute in `app/`. Existing seed files have not moved.
+Application code, Dockerfile, tests, and Compose live under `app/`. Run make commands from the project root; recipes execute in `app/`. Existing seed files remain at the root.
+
+## Run the containers
+
+Requirements: Docker with Compose and Python 3 (also used by the supplied vendor).
+
+```sh
+make up                  # creates app/.env once; builds and waits for healthy API/DB
+make db-migrate          # applies the versioned events schema explicitly
+make test-db             # real PostgreSQL constraints; synthetic test rows rolled back
+curl http://localhost:3000/health
+curl http://localhost:3000/ready
+make psql                # DB shell inside its container
+make test                # health/readiness/config tests in the pinned Node image
+make logs
+make down                # stops containers; preserves database volume
+```
+
+To check the host vendor, run `make vendor` in a separate terminal, then `make vendor-check`. The API container uses `host.docker.internal:9000`; PostgreSQL uses `db:5432` on the shared network. PostgreSQL has no published host port. See [environment setup](docs/environment.md) for generated credentials, the vendor's loopback-listener caveat, and the optional Linux Compose override.
+
+Express currently exposes liveness/readiness endpoints only. The events table has a generated UUID primary key and unique message_id. Event intake, normalization, delivery coordination, and vendor calls remain unimplemented; the unique key alone does not implement end-to-end deduplication. API readiness checks DB connectivity, not a future event schema. `make config` validates Compose without printing secrets; `make build` builds the API image. Frontend/lint/product-E2E Makefile hooks remain guarded.
 
 Next: finish the remaining architecture/tooling decisions, then data design and intake contracts before runtime setup. Start a new session for automatic AGENTS discovery; AGENTS.md has been explicitly read and applied in this session.
+
+The user-supplied [vendor contract and sample request](docs/api-contracts.md) restrict forwarding to seven event names. This later requirement supersedes the original all-event-names policy. The preserved seed below describes the stub, which does not itself enforce the name allowlist.
+
+See [the event schema and field mapping](docs/data-model.md). Database types preserve source timestamps as timezone-aware instants and nested properties/context as JSONB. The migration is additive, version-guarded, and transactional; make up does not reapply it implicitly.
 
 ## Original exercise seed
 

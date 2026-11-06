@@ -2,9 +2,9 @@
 
 POC scope: API and PostgreSQL containers share a Compose network; the vendor runs on the host, with direct calls after persistence and messageId deduplication. No queue/worker is included.
 
-Status: planned observations only; application, schema, environment, and test harness are not implemented. Commands remain for later stages. Accepted product criteria are recorded in [prd.md](prd.md).
+Status: event-pipeline observations below remain planned. The Compose/Express health skeleton is running and its five tests pass; the initial event table is implemented, while ingestion, normalization, duplicate-dispatch coordination, and vendor event delivery remain unimplemented. See README.md for actual infrastructure commands. Accepted product criteria are recorded in [prd.md](prd.md).
 
-1. Submit numeric-user, mapped-UUID, unmapped-UUID, and anonymous examples. Show persistence and delivery outcomes without exposing contact data.
+1. Use eligible event names for numeric-user, mapped-UUID, unmapped-UUID, and anonymous examples. Also demonstrate that excluded names do not generate vendor calls even though the stub may accept their shape. Show persistence and delivery outcomes without exposing contact data.
 2. Keep the vendor strict. Verify mapped fields, occurrence time in milliseconds, unchanged messageId, and device attribution. Under the accepted policy, missing profiles omit customer_user_id.
 3. Show a registration event's outbound payload excludes traits, contact fields, and advertising metadata.
 4. Demonstrate malformed JSON and invalid timestamps/identifiers failing visibly without blocking a subsequent valid event.
@@ -22,3 +22,9 @@ Status: planned observations only; application, schema, environment, and test ha
 The [README](../README.md) documents existing vendor controls. Example totals are illustrative. Wait for outstanding requests before resetting statistics; reset preserves failure configuration. Timeout mode does not simulate an accepted event with a lost response.
 
 Next: finish architecture, then data/contracts decisions for deduplication and queue-free recovery. Ordinary shutdown and separate destructive reset procedures belong to environment setup.
+
+## Setup evidence
+
+Implemented and verified: Express health/readiness, API/PostgreSQL shared network, non-superuser DB role, non-root API, strict host-vendor connectivity, fresh DB bootstrap, and DB stop/restart persistence/readiness recovery. These setup observations do not satisfy the product criteria above. No source events were forwarded during setup verification.
+
+The initial event-schema slice is now applied: make db-migrate and make test-db demonstrate UUID identity, source message_id uniqueness, typed source columns, nullable user identity, and JSONB constraints. The 24 database checks pass with all synthetic rows rolled back; full event journeys above remain planned.

@@ -1,0 +1,10 @@
+# Temporary schema-test container on the existing api/db network. No host ports
+# are published by `compose run`; the normal API image/tag is left unchanged.
+services:
+  api:
+    image: cmb-poc-schema-tests
+    build:
+      target: schema-test
+    command: ["node", "test/schema.integration.mjs"]
+    healthcheck:
+      disable: true

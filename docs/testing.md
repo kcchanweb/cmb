@@ -2,9 +2,9 @@
 
 ## POC verification scope
 
-The selected topology is containerized API → PostgreSQL → direct host-vendor calls, with no queue, worker, fan-out, DLQ, or batching. The frontend is absent; no frontend/browser suite is required. Backend unit/integration and HTTP pipeline runners are still unselected, not implicitly waived.
+The selected topology is containerized API → PostgreSQL → direct host-vendor calls, with no queue, worker, fan-out, DLQ, or batching. The frontend is absent; no frontend/browser suite is required. Node built-in tests are selected for the infrastructure skeleton; product integration/HTTP pipeline coverage remains unconfigured.
 
-Required later checks: normalized payload/identity/privacy cases; database commit before send; persistent unique messageId identity; identical and concurrent duplicates causing no extra vendor sends; changed-content conflicts; bounded transient retries and permanent failures; uncertain vendor acceptance; outcome-write failure; explicit recovery after restart; API-to-db service DNS; API-to-host vendor route despite the stub loopback binding; readiness and database-volume persistence. Use isolated DB data and keep vendor strict enabled. No runtime checks have run yet.
+Required later checks: all seven allowed names eligible and excluded names never forwarded, independent of stub permissiveness; normalized payload/identity/privacy cases; database commit before send; persistent unique messageId identity; identical and concurrent duplicates causing no extra vendor sends; changed-content conflicts; bounded transient retries and permanent failures; uncertain vendor acceptance; outcome-write failure; explicit recovery after restart; API-to-db service DNS; API-to-host vendor route despite the stub loopback binding; readiness and database-volume persistence. Use isolated DB data and keep vendor strict enabled. Actual setup verification is recorded below; full product checks remain pending.
 
 ## Framework selections and setup
 
@@ -15,7 +15,7 @@ Record exact versions and helper libraries in [tech-stack.md](tech-stack.md). Fo
 | Component | Selected framework and helpers | Test location under app/ | Command and working directory | Setup / execution status |
 | --- | --- | --- | --- | --- |
 | Frontend unit / component | Not applicable: API-only POC | Not applicable | Not applicable | No frontend implemented or planned in this slice |
-| Backend unit / integration | TBD | TBD | TBD | Planned; select framework or explain absent layer |
+| Backend infrastructure | Node built-in test runner | app/test/setup.test.mjs | make test from root; npm test from app/ optionally | Five health/config tests passed on host and pinned container Node |
 | End-to-end journeys | TBD | TBD | TBD | Planned; select framework or record deferral / not-applicable reason |
 
 setup-dev includes test dependencies/configuration and noninteractive harness commands; a health-only skeleton may include a real health test. Keep product-journey checks planned until application implementation exists. Keep tests/configuration under app/ and preserve existing suites. The root Makefile exposes test-frontend/test-backend/test-e2e; configure make test for runnable suites and document pending exclusions. Run make from the root; recipes execute tools from app/ or component directories. Document prerequisites, startup, fixtures, and cleanup. Mirror targets in README, distinguishing harness readiness, planned checks, and actual results.
@@ -54,3 +54,23 @@ setup-dev includes test dependencies/configuration and noninteractive harness co
 - Record exact commands, outcomes, and skipped checks. Do not report unrun tests as passing.
 - Verify representative tests are discovered and executed; empty suites and placeholder assertions do not verify behavior.
 - Configure CI commands and thresholds after selecting the stack; document executable commands in README.md.
+
+## Runnable infrastructure checks
+
+- make config: validate Compose quietly, after preserving/initializing ignored local credentials.
+- make build: compile TypeScript and build the non-root API runtime image.
+- make test: Docker test target uses the pinned Node image and runs five real HTTP/configuration tests. Covers liveness during DB failure, readiness failure/recovery and redaction, unknown-route error shape, required config/port validation, and safe vendor-origin parsing.
+- Optional host workflow from app/: npm ci, npm run typecheck, npm test. Host Node must satisfy package.json engines; use .nvmrc for the pinned runtime.
+- After make up: GET /health and GET /ready, inspect the application DB role, verify PostgreSQL restart/volume persistence, and make vendor-check with the strict host vendor running. The vendor probe is read-only.
+
+Source-event schema tests now verify row identity, unique message_id, types and constraints against PostgreSQL. Incoming ingestion/duplicate-dispatch, normalization, delivery, and replay features and their tests remain unimplemented. Skeleton readiness proves a real DB SELECT 1 only, not a future schema. The container build/test and runtime observations are recorded in .ai/project.json and the local handoff summary after execution.
+
+Observed setup results: both Compose services healthy; app DB role is non-superuser and API UID is 1000; fresh-volume SQL bootstrap passed in a disposable project; strict vendor GET /_stats succeeded from api; DB stop produced /ready 503 while /health stayed 200; restart restored readiness with unchanged database cluster identity. Base and Linux-override Compose configurations validate; Linux runtime networking itself has not been exercised. Main services remain running; only the isolated bootstrap-check project/volume was removed.
+
+Contract examples: parse and type-check [vendor-request.example.json](vendor-request.example.json) against the supplied descriptive [contract snapshot](vendor-payload-contract.json). This is a static consistency check, not evidence that relay filtering or delivery exists. Later runtime tests must also cover unknown fields, omitted versus null optional fields, seconds versus millisecond timestamps, customer-ID mapping, and repeated messageIds.
+
+## Source-event schema regression
+
+Run make db-migrate after the DB is up, then make test-db. Migration SQL runs through psql as the application role. The schema-test Docker target and compose.test.yaml run the existing pg dependency in a disposable container, with the main database and API kept running. All test data is synthetic and rolled back in a finally block. No vendor requests are made.
+
+Actual result: 24 checks passed first in an isolated database and then on the migrated POC database. Covers generated/distinct UUIDs; unique message_id and primary key; nonblank/non-null source identifiers and names; numeric/UUID/anonymous users; nullable receipt time/objects; JSONB and timestamp round trips; invalid JSON object shapes; infinite timestamps. The migration re-run was a no-op with one recorded version; the isolated DB was dropped and no test rows remain. The API /ready remained healthy. These tests do not verify full duplicate-dispatch prevention or replay.

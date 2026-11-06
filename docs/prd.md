@@ -1,18 +1,18 @@
 # Event relay product brief
 
-Status: accepted product baseline. The user replied “accept” on 2026-11-06 to the proposed scope, normalization policies, and acceptance criteria. Init-project is complete; architecture is in progress and data/contracts/setup/implementation are unstarted.
+Status: accepted product baseline. The user replied “accept” on 2026-11-06 to the proposed scope, normalization policies, and acceptance criteria. Init-project is complete; architecture is in progress; the reviewed initial source-event table is implemented, broader data design is in progress, and incoming event contracts/delivery are unimplemented. The user subsequently authorized a bounded Compose/Express health skeleton, now implemented and verified.
 
 ## Problem and audience
 
 The user requests an API endpoint that accepts events, writes them to PostgreSQL, normalizes them, and forwards them to a downstream API. The existing exercise provides mobile analytics events, profile lookup data, and a fixed vendor stub. The intended users are an event-producing client and a developer/operator who needs to verify delivery and diagnose failures. This audience was inferred from the exercise and included in the accepted baseline.
 
-User-supplied stack, verbatim: “Tech stack: node.js/typescript, psql.” Node.js/TypeScript and PostgreSQL are selected. The user subsequently selected separate API/database containers on one shared network with a host-run vendor; exact versions, libraries, schema, intake contract, and setup details remain unselected.
+User-supplied stack, verbatim: “Tech stack: node.js/typescript, psql.” Node.js/TypeScript and PostgreSQL are selected. The user subsequently selected separate API/database containers on one shared network with a host-run vendor; Express and the container skeleton versions/configuration are now selected in tech-stack.md. The reviewed source-event fields plus a UUID identifier are now implemented in PostgreSQL. Intake contracts and delivery/recovery state remain open.
 
 ## Scope and journeys
 
 Accepted first slice: accept source events, retain accepted data in PostgreSQL, normalize to the vendor shape, deliver it, and make delivery outcomes observable. The user subsequently selected request-owned direct delivery after database persistence, without fan-out or queues. The observation interface remains unselected.
 
-1. A producer submits a valid event. It is retained and delivered with its original messageId.
+1. A producer submits a valid event with an eligible event name. It is retained and delivered with its original messageId.
 2. Numeric, mapped UUID, unmapped UUID, and anonymous identities are handled according to the accepted policies below while preserving device attribution.
 3. Invalid input or downstream failure occurs. The operator can distinguish validation, unresolved identity, pending delivery, permanent rejection, and successful delivery; retained work is not silently lost.
 
@@ -51,7 +51,7 @@ The mappings and policies below originated as recommendations and were accepted 
 
 Additional accepted rules:
 
-- Forward all valid event names and source types. No purchase-only, track-only, or other filter is supplied.
+- Forward only the exact event names in the user-supplied [vendor contract](vendor-payload-contract.json): purchase, complete_registration, subscription_started, credits_spent, match_created, message_sent, push_opened. This newer explicit rule supersedes the earlier all-event-names policy; no separate source-type filter is specified. Ineligible names must never trigger a vendor call; intake/storage handling remains to be designed.
 - Require nonempty messageId and deviceId for this slice, although the vendor makes both optional. Valid fixtures provide both. Do not fabricate missing identifiers or send an unresolved UUID as an internal customer ID.
 - Build an allowlisted outbound payload. Exclude type, receivedAt, raw userId, raw context, traits.email, traits.phone, and advertisingId. Do not move excluded metadata into event_value. The vendor allows arbitrary event_value keys; a broader sensitive-property policy and retained-input privacy policy remain future review items.
 - Malformed JSON and invalid source values fail visibly and are not forwarded. A bad event must not prevent later valid submissions from being processed. Intake error shapes remain a later contract decision.
@@ -61,13 +61,13 @@ Additional accepted rules:
 
 ## Observable acceptance criteria
 
-These are accepted requirements for future behavior. No application behavior has been implemented or tested.
+These are accepted requirements for future behavior. The initial persistence constraints are implemented and tested; the end-to-end product behaviors below remain unimplemented and untested; the separate health/configuration skeleton has passed its infrastructure tests.
 
 | ID | Scenario | Expected observation |
 | --- | --- | --- |
-| AC-01 | Valid numeric-user event | Retained in PostgreSQL; strict vendor accepts mapped fields with unchanged messageId/deviceId and occurrence time in milliseconds. |
-| AC-02 | UUID found in profiles.json | Forwarded customer_user_id equals the mapped internal ID string. |
-| AC-03 | UUID missing from lookup or userId absent | Delivered with device_id and without customer_user_id; the outcome distinguishes missing mapping from absent identity. |
+| AC-01 | Valid eligible numeric-user event | Retained in PostgreSQL; strict vendor accepts mapped fields with unchanged messageId/deviceId and occurrence time in milliseconds. |
+| AC-02 | Eligible event with UUID found in profiles.json | Forwarded customer_user_id equals the mapped internal ID string. |
+| AC-03 | Eligible event with UUID missing from lookup or userId absent | Delivered with device_id and without customer_user_id; the outcome distinguishes missing mapping from absent identity. |
 | AC-04 | Registration event carries contact and advertising metadata | Outbound payload excludes traits, email, phone, raw context, and advertisingId. |
 | AC-05 | Malformed JSON, invalid timestamp/properties type, or missing messageId/deviceId | Visible validation failure, no forwarding; a later valid event still succeeds. |
 | AC-06 | Vendor 400 or 422 | Permanent rejection and reason remain observable; unchanged payload is not automatically retried. |
@@ -76,11 +76,14 @@ These are accepted requirements for future behavior. No application behavior has
 | AC-09 | timestamp differs from receivedAt | event_time reflects timestamp, independent of arrival order. |
 | AC-10 | Identical event is submitted repeatedly or concurrently with the same messageId | One durable event identity and one coordinated delivery flow; duplicate intake does not produce another vendor send. A repeat after confirmed success reuses the result. |
 | AC-11 | A messageId is reused for different event content | The conflict is visible; the existing event is not overwritten or newly sent. |
+| AC-12 | An otherwise valid event has a name outside the seven-name allowlist | No vendor request is initiated; ineligibility is distinguishable from confirmed delivery, independently of the permissive local stub. |
 
 ## Constraints and remaining design work
 
 - Exercise input is approximately 10,000 lines, including deliberately malformed JSON. No throughput target, latency target, time budget, or additional interview rules were supplied.
 - Demonstration should reconcile valid, rejected, pending, permanently failed, and delivered outcomes. Use vendor unique_message_ids and duplicates with local outcomes; events_received alone does not prove unique delivery. README example totals are illustrative.
-- Authentication, retention, access control, schema, and detailed execution settings are unselected. The API/database containers and host vendor are selected; queues and background consumers are deferred for this POC. Do not record credentials or full event bodies in task logs. Production privacy and access requirements remain outside this exercise baseline.
-- Product review completed: the user accepted all-events forwarding, device-only missing-profile handling, mappings, stricter source identifiers, and recovery expectations on 2026-11-06. No product blockers remain.
+- Authentication, retention, access control, delivery-state schema, and detailed event-processing settings remain unselected. The API/database containers and host vendor are selected; queues and background consumers are deferred for this POC. Do not record credentials or full event bodies in task logs. Production privacy and access requirements remain outside this exercise baseline.
+- Product review completed on 2026-11-06: the initial all-events forwarding rule is superseded by the later user-supplied seven-name allowlist. Device-only missing-profile handling, mappings, stricter source identifiers, and recovery expectations remain accepted. Intake/storage behavior for ineligible names remains a later contract/data decision.
 - Next: complete architecture decisions for the selected direct-call/container topology, then design data and intake contracts. Product scaffolding does not establish architecture readiness or a built app.
+
+Source-field review: the user reviewed the README-based field list and requested a UUID table identifier, accepting the rest. The internal id is a database-generated UUID; message_id remains the separately unique source identity. See [data-model.md](data-model.md) for the implemented mapping and deliberately open delivery-state schema.

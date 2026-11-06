@@ -1,0 +1,72 @@
+{
+  "vendor_payload_contract": {
+    "error_response": {
+      "status_code": 422,
+      "description": "Invalid payloads receive HTTP 422 with details. The same payload shape is used by the local stub."
+    },
+    "allowed_event_names": [
+      "purchase",
+      "complete_registration",
+      "subscription_started",
+      "credits_spent",
+      "match_created",
+      "message_sent",
+      "push_opened"
+    ],
+    "fields": [
+      {
+        "field": "event_name",
+        "type": "string",
+        "required": true,
+        "notes": "source event name, unchanged"
+      },
+      {
+        "field": "event_time",
+        "type": "int",
+        "required": true,
+        "notes": "epoch milliseconds, from timestamp not receivedAt"
+      },
+      {
+        "field": "customer_user_id",
+        "type": "string",
+        "required": false,
+        "notes": "the numeric profile id - the join key back to our warehouse"
+      },
+      {
+        "field": "device_id",
+        "type": "string",
+        "required": false,
+        "notes": "the event's deviceId - what the vendor attributes on"
+      },
+      {
+        "field": "event_value",
+        "type": "object",
+        "required": false,
+        "notes": null
+      },
+      {
+        "field": "app_version",
+        "type": "string",
+        "required": false,
+        "notes": null
+      },
+      {
+        "field": "platform",
+        "type": "string",
+        "required": false,
+        "notes": null
+      },
+      {
+        "field": "messageId",
+        "type": "string",
+        "required": false,
+        "notes": null
+      }
+    ],
+    "constraints": {
+      "unknown_fields": "rejected",
+      "validation": "Only event_name and event_time are required",
+      "deduplication": "repeated submissions with the same messageId are acknowledged but processed only once"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # POC infrastructure and direct delivery
 
-Status: user-selected topology recorded; detailed architecture and setup remain in progress/unstarted respectively. Sources: [DESIGN.md](../DESIGN.md), the user's explicit POC narrowing, and the subsequent API/database container requirement on 2026-11-06. This POC override governs implementation scope; DESIGN.md remains the broader future reference.
+Status: user-selected topology recorded; the explicitly requested Compose/Express health skeleton is implemented and verified. Product architecture is in progress; the initial source-event schema is now implemented; incoming event HTTP contracts and event processing remain unimplemented. Sources: [DESIGN.md](../DESIGN.md), the user's explicit POC narrowing, and the subsequent API/database container requirement on 2026-11-06. This POC override governs implementation scope; DESIGN.md remains the broader future reference.
 
 ## Topology
 
@@ -34,13 +34,15 @@ Use one ordinary project bridge network for api and db. Container-to-container t
 
 On Docker Desktop, host.docker.internal is supplied by Docker. Plain Linux Engine generally needs the API service's extra_hosts mapping host.docker.internal:host-gateway. This mapping supplies an address; it does not make a loopback-only host listener reachable by itself. See [Docker host-gateway documentation](https://docs.docker.com/reference/cli/docker/container/run/#add-entries-to-container-hosts-file---add-host).
 
-Important seed constraint: vendor.py binds explicitly to 127.0.0.1 and offers only --port, not --host. Do not edit it. At setup, verify a read-only GET /_stats from inside api, not just from the host. Direct host-route access to the loopback listener is not yet verified for this Docker installation. If it fails, keep the vendor unchanged and configure a host-side TCP forwarder from a Docker-reachable interface/alternate port to 127.0.0.1:9000; point the API at that alternate port and restrict the relay to local Docker access. The forwarder is a conditional transport fallback, not another processing service. Do not silently expose vendor control endpoints to the LAN or claim the alias alone solves binding.
+Important seed constraint: vendor.py binds explicitly to 127.0.0.1 and offers only --port, not --host. Do not edit it. At setup, verify a read-only GET /_stats from inside api, not just from the host. A read-only probe from the running API container verified direct access to the loopback listener on this Docker Desktop installation with strict validation enabled; no relay was needed. Repeat that check on another machine rather than assuming all Docker engines share this behavior. If it fails, keep the vendor unchanged and configure a host-side TCP forwarder from a Docker-reachable interface/alternate port to 127.0.0.1:9000; point the API at that alternate port and restrict the relay to local Docker access. The forwarder is a conditional transport fallback, not another processing service. Do not silently expose vendor control endpoints to the LAN or claim the alias alone solves binding.
 
 The same configured vendor destination must be used for tests and application calls. localhost inside api refers to api itself, not db or the host. If a host relay is required, record its exact binding, alternate port, startup/cleanup and firewall scope in environment documentation during setup.
 
-## Direct request flow and consistency
+## Planned event request flow and consistency
 
-1. Validate the source event and derive a safe normalized payload under [prd.md](prd.md). Invalid events fail without vendor traffic.
+The current Express skeleton exposes health/readiness only. The event flow below remains the required future behavior. The initial source-event table exists; no event intake/delivery code is implemented.
+
+1. Validate the source event, check its event name against the supplied seven-name allowlist, and derive a safe normalized payload under [prd.md](prd.md). Invalid or ineligible events produce no vendor traffic; exact intake handling of ineligible names remains a contract decision.
 2. Use source messageId as the database-enforced unique event identity and persist the accepted event plus enough replay information. A duplicate submission reuses existing state instead of initiating a new vendor call; an existing failed/uncertain attempt requires the explicit retry/recovery path, not automatic redispatch just because the client submitted again. Reject same-ID/different-content conflicts. Coordinate concurrent admission atomically in the database before dispatch. Await successful database commit before any vendor side effect. A failed or uncertain commit does not authorize delivery; reconcile first.
 3. Call the configured vendor POST /events directly within the request's finite time budget. No active DB transaction, row lock, or checked-out transaction connection may span the HTTP call or retry delay.
 4. Persist the observed vendor outcome in a new short database operation. Return a contract-defined result that distinguishes retained input from confirmed downstream delivery. Response status codes/shapes belong in [api-contracts.md](api-contracts.md), not this topology document.
@@ -81,6 +83,16 @@ During setup, add DB health/readiness checks and ensure application startup wait
 
 Ordinary shutdown must preserve the named database volume. Destructive resets must be separate and explicit. Drain or stop admission on shutdown, bound completion time, close DB/HTTP resources, and leave interrupted work recoverable.
 
-## Verification still required
+## Actual setup verification and remaining work
 
-No containers or connectivity checks have run for this documentation task. setup-dev must configure app/compose.yaml and record actual evidence for API↔DB service DNS, API↔host vendor routing, strict acceptance, DB restart persistence, readiness, and safe shutdown. Behavioral tests must cover the failure table, concurrent duplicate submissions, and restart recovery; see [testing.md](testing.md). Exact versions, ports, secrets/configuration keys, retry limits, and schemas remain unselected.
+Implemented app/compose.yaml with api/db, one bridge network, a private PostgreSQL port, host-loopback-published API port 3000, DB health dependency, non-root read-only API runtime, and PostgreSQL 18 named volume. app/compose.linux.yaml optionally supplies the plain Linux host-gateway mapping. The API is Express/TypeScript with /health and /ready; readiness performs SELECT 1 as event_relay_app, not an event-schema check. The DB bootstrap SQL creates the application role only, with no product tables.
+
+Actual checks passed: quiet Compose validation (base and Linux override), TypeScript build, five health/configuration tests on both host Node and pinned container Node, clean-volume DB bootstrap in a disposable project, healthy api/db startup, API-to-DB connectivity as non-superuser, API process UID 1000, strict host-vendor GET /_stats, readiness 503 during DB shutdown while liveness stayed 200, and readiness recovery with the same database cluster identity after restart. The disposable verification volume was removed; the main database volume and healthy services were retained.
+
+The first shell-based DB bootstrap failed with an executable bind-mount error. It was replaced by psql SQL using environment lookup, verified on a fresh volume; the initially interrupted local bootstrap was repaired explicitly without deleting its volume.
+
+Product tests must still cover the planned event failure table, concurrent duplicate submissions, and explicit replay after restart. Current health checks do not establish those behaviors. See [testing.md](testing.md) and [environment.md](environment.md) for actual commands/configuration. Exact setup pins are in [tech-stack.md](tech-stack.md); product retry budgets, schema, intake contracts, auth, and recovery mechanisms remain open. The bounded runtime request does not complete all design dependencies or the full setup-dev phase.
+
+## Initial events storage
+
+The user reviewed the README fields and added a UUID row key. The running POC now has public.events from [the versioned migration](../app/db/migrations/001_create_events.sql): internal UUID id, unique text message_id, source scalar fields, timezone-aware times, and nullable object-constrained properties/context JSONB. Bootstrap still only creates the role; run make db-migrate explicitly after startup. The migration does not send events, clear data, or add a queue. make test-db creates a temporary schema-test container, rolls back all synthetic inserts, and removes that container; it is not a background worker. All 24 checks passed, and the running API remained ready. Delivery-state/dispatch ownership and explicit recovery remain future design work.

@@ -1,0 +1,14 @@
+{
+  "event_name": "purchase",
+  "event_time": 1788739200000,
+  "customer_user_id": "987654",
+  "device_id": "dev_abc123xyz",
+  "event_value": {
+    "item_id": "prod_xyz",
+    "price": 49.99,
+    "currency": "CAD"
+  },
+  "app_version": "2.4.1",
+  "platform": "ios",
+  "messageId": "msg_9988776655"
+}

@@ -11,12 +11,12 @@
     "design-architecture": {
       "status": "in_progress",
       "blockers": [],
-      "evidence": "User supplied DESIGN.md then selected direct API-to-PostgreSQL-to-vendor POC, API/database containers on one network with host vendor, and deduplication; stack/infra/guardrails updated, exact tools and budgets remain open."
+      "evidence": "User selected direct delivery, Express/TypeScript, PostgreSQL containers and host vendor; bounded setup pins/tools implemented. Product schema/contracts, auth, delivery budgets and recovery design remain open."
     },
     "design-data": {
-      "status": "not_started",
+      "status": "in_progress",
       "blockers": [],
-      "evidence": ""
+      "evidence": "User reviewed README fields and requested UUID row identity; initial events migration implemented/applied with 24 passing PostgreSQL checks. Delivery state, retention and intake-dependent model remain open."
     },
     "design-contracts": {
       "status": "not_started",
@@ -24,15 +24,15 @@
       "evidence": ""
     },
     "setup-dev": {
-      "status": "not_started",
+      "status": "in_progress",
       "blockers": [],
-      "evidence": ""
+      "evidence": "Explicit bounded request: create app/ Compose services and Express skeleton. Infrastructure tests/startup/host-vendor route verified; product schema/contracts and complete design dependencies remain open."
     }
   },
   "time_budget_minutes": null,
   "environment": {
     "kind": "hybrid",
-    "execution": "undecided"
+    "execution": "verify_startup"
   },
   "answers": {
     "product_goal": {
@@ -53,7 +53,7 @@
     "product_baseline": {
       "value": "Accepted all-valid-events forwarding, occurrence-time normalization, mapped customer IDs or device-only attribution, outbound allowlist, visible outcomes and recoverable unfinished work.",
       "source": "recommended",
-      "evidence": "docs/prd.md; recommended baseline accepted by the user\u2019s explicit \u201caccept\u201d reply on 2026-11-06."
+      "evidence": "docs/prd.md; recommended baseline accepted by the user\u2019s explicit \u201caccept\u201d reply on 2026-11-06. Initial all-event-names forwarding subsequently superseded by the explicit supplied vendor allowlist; other accepted rules remain in effect."
     },
     "product_baseline_acceptance": {
       "value": "accept",
@@ -79,20 +79,55 @@
       "value": "Commit before vendor side effects, short transactions, durable deduplication, explicit uncertain outcomes, bounded retry/resource budgets, private container networking and unchanged strict vendor.",
       "source": "recommended",
       "evidence": "User asked for context-specific guardrails; docs/guardrails.md and docs/infrastructure.md. Exact mechanisms and budgets remain open."
+    },
+    "http_framework": {
+      "value": "Express",
+      "source": "user",
+      "evidence": "User requested Compose containers and specified Express on the Node.js side."
+    },
+    "runtime_layout": {
+      "value": "app code, and dc file should be in app folder",
+      "source": "user",
+      "evidence": "Current-turn steering; app/compose.yaml, Dockerfile, source, tests and runtime support live under app/."
+    },
+    "bounded_setup_scope": {
+      "value": "Compose API/PostgreSQL services and minimal Express/TypeScript health/readiness skeleton with read-only vendor connectivity probe.",
+      "source": "recommended",
+      "evidence": "Concrete bounded implementation of the explicit container setup request. Product data/contracts/delivery remain unstarted; no full phase acceptance inferred."
+    },
+    "vendor_contract": {
+      "value": "docs/vendor-payload-contract.json",
+      "source": "user",
+      "evidence": "User-supplied vendor contract with seven allowed event names; supersedes the prior all-event-names requirement. Linked and interpreted in docs/api-contracts.md."
+    },
+    "vendor_request_example": {
+      "value": "docs/vendor-request.example.json",
+      "source": "user",
+      "evidence": "User-supplied purchase payload, treated as vendor POST /events example in the context of the supplied destination contract."
+    },
+    "source_field_review": {
+      "value": "We need to add a uuid for the table; the rest looks fine.",
+      "source": "user",
+      "evidence": "User accepted the README-based field list after requesting review before proceeding; original schema-building task resumed with UUID row identity."
+    },
+    "initial_event_schema": {
+      "value": "docs/data-model.md and app/db/migrations/001_create_events.sql",
+      "source": "recommended",
+      "evidence": "Implements reviewed fields plus UUID id; text message_id unique, JSONB objects, timestamptz instants. Applied/tested as bounded source-storage work; no delivery schema or incoming API contract acceptance inferred."
     }
   },
   "deferred": [
     {
       "topic": "SQS, fan-out, Lambda, DLQ, batching and background consumers",
-      "reason": "User explicitly excludes them from the direct-call POC; DESIGN.md remains future reference."
+      "reason": "User excludes them from the direct-call POC."
     },
     {
-      "topic": "Exact stack/tool versions, tests, auth and request/retry/resource budgets",
-      "reason": "Architecture in progress; resolve before dependent setup or implementation."
+      "topic": "Product integration/E2E tooling and optional formatter/linter",
+      "reason": "Infrastructure uses pinned Node built-in tests and tsc; event pipeline remains unimplemented."
     },
     {
-      "topic": "Schema, intake responses, concurrent delivery ownership and explicit recovery trigger",
-      "reason": "Data/contracts phases remain unstarted; durable state does not imply automatic recovery."
+      "topic": "Incoming HTTP schema/auth/response contracts, dispatch/delivery state and recovery, retention/access policy",
+      "reason": "Initial source-event storage is implemented; these requirements were not finalized by the source-field review."
     }
   ],
   "verification": [
@@ -104,22 +139,57 @@
     {
       "check": "serial_document_reviews",
       "status": "passed",
-      "evidence": "Security, Performance, Logic, Architecture reviewed serially for the POC documentation. Checked privacy/host relay scope, bounded request/retry resources, commit/dedup/uncertain outcome semantics, and queue-free container/host boundaries. No unresolved blocking documentation findings; detailed implementation decisions remain explicit."
+      "evidence": "Security, Performance, Logic, Architecture reviewed serially for the bounded setup. Secrets excluded; private DB/non-root API; bounded pool/probes; fresh bootstrap, outage/recovery and state scope checked; no unresolved blocking findings."
     },
     {
       "check": "application_behavior",
       "status": "not_run",
-      "evidence": "No application implementation or configured application tests exist in this phase."
-    },
-    {
-      "check": "architecture_document_structure",
-      "status": "passed",
-      "evidence": "validate.py returned zero errors; DESIGN.md local links and code-fence balance checked. Expected unselected-tooling/future-design placeholders and no-Compose warning remain because setup is unstarted."
+      "evidence": "Full event ingestion/normalization/deduplication/delivery/recovery is not implemented; skeleton tests are separate."
     },
     {
       "check": "container_host_connectivity",
-      "status": "not_run",
-      "evidence": "Documentation update only. vendor.py loopback bind verified by source inspection; actual Docker-to-host route and any TCP relay remain for setup."
+      "status": "passed",
+      "evidence": "GET /_stats from API container reached existing host vendor with strict=true; no relay needed on this Docker Desktop host."
+    },
+    {
+      "check": "compose_startup",
+      "status": "passed",
+      "evidence": "Pinned api/db images built/started healthy; API serves /health and /ready and uses db service DNS; main volume retained."
+    },
+    {
+      "check": "infrastructure_tests",
+      "status": "passed",
+      "evidence": "TypeScript build and five real HTTP/config tests passed on host Node v25.6.1 and pinned image Node v24.22.2."
+    },
+    {
+      "check": "database_bootstrap_recovery",
+      "status": "passed",
+      "evidence": "Fresh-volume SQL role bootstrap verified in isolated project; app role non-superuser, API UID1000. Main DB stop/readiness503 and restart/readiness200 verified with unchanged cluster identity."
+    },
+    {
+      "check": "compose_configuration",
+      "status": "passed",
+      "evidence": "Base and Linux override configurations validate quietly. app/.env generated once with mode0600; no credentials printed."
+    },
+    {
+      "check": "final_structure",
+      "status": "passed",
+      "evidence": "Canonical validator zero errors with intentional remaining HTTP/testing placeholders. Base/test Compose config valid; root db-migrate/test-db recipes dry-run resolve under app/. POC events row count zero after tests."
+    },
+    {
+      "check": "vendor_contract_example",
+      "status": "passed",
+      "evidence": "Supplied snapshot/example parsed; unique field/name lists, allowed name, required fields, exact types, numeric customer ID and stub millisecond range checked. Direct in-process vendor.validate returned no errors. Excluded app_open was also accepted by stub shape validation, confirming enum gap. No HTTP/event sends."
+    },
+    {
+      "check": "initial_event_schema",
+      "status": "passed",
+      "evidence": "Migration applied to isolated DB and POC DB as app role. Repeat is a no-op with one version. 24 real PostgreSQL checks passed on both; all synthetic records rolled back, isolated DB removed, API remains ready."
+    },
+    {
+      "check": "serial_schema_reviews",
+      "status": "passed",
+      "evidence": "Security, Performance, Logic, Architecture reviewed serially: parameterized synthetic tests/private sensitive context; only UUID/unique-ID indexes; transaction/version/null/JSON/time semantics and rollback checks; reviewed source-only scope and no HTTP/delivery ownership claims. No blocking findings."
     }
   ],
   "seed_files": {

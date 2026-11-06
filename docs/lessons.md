@@ -6,4 +6,4 @@ Record one actionable lesson per row after a mistake is understood. Include enou
 
 | Date | Error/Mistake | Context | Corrected Assumption |
 | --- | --- | --- | --- |
-| YYYY-MM-DD | TBD: observed mistake | TBD: trigger, component, and evidence | TBD: verified rule or preventive action |
+| 2026-11-06 | Bind-mounted shell DB initializer failed with bad-interpreter permission denied | Fresh PostgreSQL container startup on this Docker Desktop host | Use the SQL initializer with psql environment lookup, and verify a fresh data volume; restarting an already initialized volume does not rerun init scripts. |

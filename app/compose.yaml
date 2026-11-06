@@ -1,0 +1,69 @@
+name: cmb-poc
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: event_relay
+      PGUSER: event_relay_app
+      PGPASSWORD: ${APP_DB_PASSWORD:?Run make init from the project root}
+      VENDOR_BASE_URL: ${VENDOR_BASE_URL:-http://host.docker.internal:9000}
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - "const r = await fetch('http://127.0.0.1:3000/ready', {signal: AbortSignal.timeout(5000)}); process.exit(r.ok ? 0 : 1)"
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+
+  db:
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    environment:
+      POSTGRES_DB: event_relay
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run make init from the project root}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run make init from the project root}
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./db/init-app-role.sql:/docker-entrypoint-initdb.d/10-app-role.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d event_relay"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  db_data:
