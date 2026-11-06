@@ -12,6 +12,11 @@ FROM build AS test
 COPY test ./test
 RUN npm test
 
+FROM build AS integration-test
+COPY test ./test
+USER node
+CMD ["node", "--test", "test/events.integration.mjs"]
+
 FROM base AS production-dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund

@@ -5,7 +5,7 @@
 APP_DIR ?= app
 COMPOSE ?= docker compose -f compose.yaml
 
-# Containerized Express/PostgreSQL setup. Product event APIs remain pending.
+# Direct-delivery Express API with PostgreSQL-backed deduplication.
 INSTALL_CMD ?= $(COMPOSE) build api
 UP_CMD ?= $(COMPOSE) up -d --build --wait --wait-timeout 90
 DOWN_CMD ?= $(COMPOSE) down
@@ -18,9 +18,9 @@ TEST_FRONTEND_CMD ?=
 TEST_BACKEND_CMD ?= docker build --target test -t cmb-poc-api-tests .
 TEST_E2E_CMD ?=
 # Include only runnable suites; document product tests pending implementation.
-TEST_TARGETS ?= test-backend
+TEST_TARGETS ?= test-backend test-db test-integration
 
-.PHONY: help init config install up down logs frontend backend lint build test test-frontend test-backend test-e2e psql db-migrate test-db vendor vendor-check
+.PHONY: help init config database install up down logs frontend backend lint build test test-frontend test-backend test-e2e psql db-migrate test-db test-integration vendor vendor-check
 
 help:
 	@printf '%s\n' \
@@ -40,6 +40,7 @@ help:
 	  'psql           Open psql as the application role inside db' \
 	  'db-migrate     Apply versioned schema migrations as the application role' \
 	  'test-db        Check the real DB schema using rolled-back synthetic data' \
+	  'test-integration  Test ingestion/dedup/delivery in a disposable database' \
 	  'vendor         Run the fixed vendor on the host (foreground)' \
 	  'vendor-check   Probe the strict host vendor from the API container' \
 	  'Frontend, lint, and product E2E targets remain unconfigured.'
@@ -50,17 +51,25 @@ init:
 config: init
 	cd "$(APP_DIR)" && $(COMPOSE) config --quiet
 
-up backend: init
+database: init
+	cd "$(APP_DIR)" && $(COMPOSE) up -d --wait --wait-timeout 90 db
+
+up backend: db-migrate
 
 psql:
 	cd "$(APP_DIR)" && $(COMPOSE) exec db psql -U event_relay_app -d event_relay
 
-db-migrate:
+db-migrate: database
 	cd "$(APP_DIR)" && $(COMPOSE) cp db/migrations/001_create_events.sql db:/tmp/cmb-001-create-events.sql
 	cd "$(APP_DIR)" && $(COMPOSE) exec -T db psql -X -v ON_ERROR_STOP=1 -U event_relay_app -d event_relay -f /tmp/cmb-001-create-events.sql
+	cd "$(APP_DIR)" && $(COMPOSE) cp db/migrations/002_event_deliveries.sql db:/tmp/cmb-002-event-deliveries.sql
+	cd "$(APP_DIR)" && $(COMPOSE) exec -T db psql -X -v ON_ERROR_STOP=1 -U event_relay_app -d event_relay -f /tmp/cmb-002-event-deliveries.sql
 
-test-db:
+test-db: db-migrate
 	cd "$(APP_DIR)" && $(COMPOSE) -f compose.test.yaml run --rm --no-deps --build api
+
+test-integration: database
+	cd "$(APP_DIR)" && python3 scripts/test-integration.py
 
 vendor:
 	cd "$(APP_DIR)" && python3 ../vendor.py --port 9000

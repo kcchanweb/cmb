@@ -1,0 +1,18 @@
+{
+  "type": "track",
+  "event": "purchase",
+  "messageId": "demo-purchase-001",
+  "timestamp": "2026-09-01T11:49:25Z",
+  "receivedAt": "2026-09-01T12:00:00Z",
+  "userId": "987654",
+  "deviceId": "demo-device-001",
+  "properties": {
+    "revenue": 49.99,
+    "currency": "CAD",
+    "sku": "demo-product"
+  },
+  "context": {
+    "app": { "version": "2.4.1" },
+    "device": { "type": "ios" }
+  }
+}

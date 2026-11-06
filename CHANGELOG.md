@@ -21,6 +21,9 @@
 - Added and applied the reviewed source-event schema with generated UUID id, unique text message_id, timezone-aware timestamps, and object-constrained JSONB.
 - Added transactional/version-guarded psql migration, root db-migrate/test-db commands, and 24 real-PostgreSQL regression checks with rolled-back synthetic data.
 
+- Implemented source event intake/status/retry routes with strict validation, canonical deduplication, atomic persistence, frozen vendor projection, and direct bounded vendor delivery.
+- Added delivery-ledger migration, token/lease recovery, read-only profile lookup, incoming OpenAPI/example,17 unit/HTTP tests and10 isolated PostgreSQL/HTTP scenarios plus strict-stub smoke.
+
 ### Fixes
 
 - None yet.

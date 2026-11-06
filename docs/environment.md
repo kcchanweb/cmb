@@ -20,7 +20,7 @@ make init creates app/.env once with distinct random 64-character hexadecimal da
 | POSTGRES_DB | Nonempty string | Compose sets event_relay for DB initialization | No |
 | POSTGRES_USER | Nonempty string | Compose sets postgres for DB bootstrap; never the API user | No |
 
-The API validates its runtime settings before listening. The pool is bounded to 5 connections with 2-second connection timeout, 10-second idle timeout, 3-second statement timeout and 3.5-second client query timeout. The vendor probe has a 3-second total timeout and does not follow redirects. These are infrastructure controls, not a product delivery policy.
+The API validates its runtime settings before listening. The pool is bounded to 5 connections with 2-second connection timeout, 10-second idle timeout, 3-second statement timeout and 3.5-second client query timeout. The read-only vendor probe has a 3-second total timeout and does not follow redirects. These are infrastructure controls, not a product delivery policy.
 
 ## Persistence and credentials
 
@@ -35,3 +35,16 @@ Start the fixed host process with make vendor in a separate terminal. Docker Des
 For plain Linux Engine, use the optional app/compose.linux.yaml override to map the host gateway. A loopback-only host listener may still require the restricted host relay described in infrastructure.md. Override VENDOR_BASE_URL to the relay's origin only when required; document its actual binding and cleanup. Do not make vendor controls publicly reachable.
 
 Local HTTP is intentional for the exercise. Production secrets delivery, TLS, retention, and public access are outside this bounded setup.
+
+## Event API settings
+
+| Variable | Default / validation | Purpose |
+| --- | --- | --- |
+| PROFILES_PATH | /app/data/profiles.json; readable valid lookup file, max1MiB | Compose mounts root profiles.json read-only. Loaded and validated once at startup; invalid/unavailable source fails startup rather than acting as an empty map. |
+| VENDOR_TIMEOUT_MS | 2000; integer20–5000 | Timeout for each direct vendor attempt. |
+| VENDOR_MAX_ATTEMPTS | 3; integer1–5 | Per-request attempt bound; durable attempts remains cumulative across explicit retries. |
+| REQUEST_TIMEOUT_MS | 15000; integer1000–20000 | Processing cancellation budget; cancels vendor calls/backoff. DB operations/final outcome recording are separately bounded/awaited. |
+
+Fixed controls:64KiB JSON body, nesting20, vendor response8KiB,16 active event routes, retry jitter base100ms/cap1000ms and rate-limit waits capped5seconds within cancellation budget,60-second claim lease. API drains up to20seconds on shutdown; Compose grace25seconds. These are POC implementation choices recorded with the user's explicit build request, not production SLO claims.
+
+Before API startup, migrations001/002 must exist; readiness checks access to the source/delivery tables and columns. make up orchestrates DB readiness → migrations → API startup; health remains independent. Changing a local .env setting takes effect after recreating api. No application setting may be sourced from an incoming request, especially the vendor URL.

@@ -16,11 +16,11 @@ The accepted [product rules](prd.md), including the later user-supplied seven-na
 | --- | --- | --- |
 | API runtime | Node.js, user-selected; own container | 24.22.2; digest pinned in app/Dockerfile |
 | Language | TypeScript; strict checking | 5.9.3 |
-| HTTP framework and runtime validator | Express, user-selected; startup config validation implemented; event validator still open | Express 5.3.0 |
+| HTTP framework and runtime validator | Express, user-selected; startup config validation implemented; source runtime validator implemented | Express 5.3.0 |
 | Database | PostgreSQL; own container with persistent volume | 18.6; digest pinned in app/compose.yaml |
 | Database CLI | psql in the database container | Match the selected PostgreSQL image |
-| Driver, query layer, migrations | pg pool; psql-driven transactional/version-guarded SQL migration for source events; delivery schema remains open | pg 8.23.1 |
-| Vendor HTTP client | Node fetch for the read-only connectivity probe; event delivery adapter still unimplemented | Bundled with Node 24.22.2 |
+| Driver, query layer, migrations | pg pool; psql-driven transactional/version-guarded SQL migration for source events; source plus delivery migrations001/002 implemented | pg 8.23.1 |
+| Vendor HTTP client | Node fetch for the read-only connectivity probe; direct delivery adapter implemented | Bundled with Node 24.22.2 |
 | Local orchestration | Docker Compose; API/database on one project bridge network | CLI 29.1.3; Compose 5.0.1 |
 | Vendor fixture | Existing Python vendor.py on host; unchanged | Seed README requires Python 3.9+; actual interpreter recorded at setup |
 | Backend unit / integration tooling | Node built-in test runner; health/readiness/configuration tests implemented | Node 24.22.2 in container; product coverage pending |
@@ -37,7 +37,7 @@ Keep these as small logical modules in one API process; they are not separate de
 - Application flow: validate and normalize, persist accepted data, await commit, call the vendor directly, persist the outcome, then respond. Request handling owns the call; no detached promise or in-memory work queue.
 - Normalizer and identity resolver: deterministic transformation using the accepted PRD mapping. An absent UUID mapping permits device-only delivery; an unreadable or invalid profile source is an operational/configuration error, not an empty lookup table.
 - Persistence boundary: parameterized operations, a database-enforced unique source messageId, replay-safe outcome recording, and concurrency control. Deduplicate before dispatch; repeated/concurrent intake is not a new delivery trigger, and already-confirmed deliveries must not be resent. Schema belongs in [data-model.md](data-model.md).
-- Vendor adapter: allowlisted payload, fixed configured destination, strict contract, response validation, timeouts, and one retry policy. Vendor payload authority remains the seed README/vendor.py; the intake API is not yet designed.
+- Vendor adapter: allowlisted payload, fixed configured destination, strict contract, response validation, timeouts, and one retry policy. Vendor payload authority remains the seed README/vendor.py; the incoming OpenAPI contract and source projection are now implemented.
 
 ## Deployment and layout
 
@@ -64,3 +64,9 @@ API port: container 3000, host loopback 3000 by default. Readiness uses SELECT 1
 ## Initial event schema — 2026-11-06
 
 After reviewing the README fields, the user requested an additional UUID and accepted the rest. Implemented events with generated UUID id, separate text message_id uniqueness, source scalar fields, timestamptz occurrence/receipt times, and object-constrained JSONB properties/context. See [data-model.md](data-model.md) and app/db/migrations/001_create_events.sql. psql (bundled with the pinned PostgreSQL image) applies versioned SQL under the non-superuser application role; no additional migration library is introduced. make test-db uses the schema-test Docker target via app/compose.test.yaml as a temporary container on the existing network, leaving the normal API image unchanged. Delivery ledger/ownership/recovery and intake contracts remain open.
+
+## Explicit event API implementation — 2026-11-06
+
+The user now requests the complete local intake/dedup/DB/direct-vendor flow. Implemented with the existing pinned Express/pg/TypeScript and Node fetch/timers/crypto/fs; no dependency changes. Runtime validation is a small explicit TypeScript boundary validator (not unchecked types), including finite JSON/Unicode/depth/body and timestamp/identity checks. Source profiles use the supplied read-only fixture, validated once. Node core tests cover source projection and vendor/HTTP errors; real-PG integration tests use a disposable DB and local HTTP test vendor. The separate strict vendor.py smoke verifies the external payload shape.
+
+The current API/storage/retry contracts and POC resource budgets are in api-contracts.md/environment.md; they replace earlier open choices for this slice. Public auth/exposure, retention/deletion, production deployment/SLOs and broader architecture remain outside this implementation. No stage is automatically marked accepted solely because code now runs.

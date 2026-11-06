@@ -1,19 +1,34 @@
-# Frontend/backend and asynchronous interactions
+# Event intake and recovery interactions
 
-Owning phase: design-contracts. Status, scope, and user acceptance evidence: TBD. Begin with the user's intended workflows; framework or database choices do not select these interactions.
+Status: implemented local POC flow at the user's explicit request. [OpenAPI](../app/contracts/openapi.json) is authoritative for HTTP bodies/statuses; [data-model.md](data-model.md) owns storage, and [infrastructure.md](infrastructure.md) owns topology. There is no frontend or message transport.
 
-## Workflow inventory
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Express
+    participant DB as PostgreSQL
+    participant Vendor as Host vendor
+    Client->>API: POST /events (one source event)
+    API->>API: Validate, canonicalize and normalize
+    API->>DB: BEGIN; INSERT event ON CONFLICT; compare hash; INSERT delivery; COMMIT
+    alt identical existing event
+        API-->>Client: Saved result, duplicate=true (no new send)
+    else source identity conflict
+        API-->>Client: 409 safe error
+    else ineligible event
+        API-->>Client: 201 skipped, persisted without vendor call
+    else new eligible event
+        API->>DB: Atomic claim with UUID token /60s lease
+        API->>DB: Record attempt for current unexpired token
+        API->>Vendor: Direct normalized POST /events
+        Vendor-->>API: Acceptance / permanent / transient / uncertain outcome
+        API->>DB: Save outcome conditional on claim token
+        API-->>Client: Result distinguishes persisted from delivered
+    end
+```
 
-| Journey / acceptance criterion | Actor and permissions | User action / client state | Backend responsibility | Success / failure outcome |
-| --- | --- | --- | --- | --- |
-| TBD | TBD | TBD | TBD | TBD |
+GET /events/:id returns safe delivery metadata, not source properties/context. POST /events/:id/retry is an explicit queue-free recovery trigger: atomically claim pending/transient/uncertain work or an expired sending lease, send the original snapshot, and record the new outcome. An active claim returns202; simultaneous retry requests cannot both claim it. Terminal delivered/skipped/permanent records are returned without new vendor calls.
 
-For each first-slice journey, describe its request/event sequence, data transition, and visible result. Add sequence diagrams where useful. Include relevant loading, empty, validation, unauthorized, stale/conflict, retry, and terminal-failure states; do not invent product requirements merely to fill the table.
+If the process stops before HTTP, committed pending data remains. If a vendor accepted but its response or local outcome write is lost, the saved state is uncertain or sending until lease expiry. Replayed calls preserve messageId under the exercise's vendor deduplication assumption; exactly-once HTTP delivery across DB/network is not promised. Stale tokens cannot overwrite newer outcomes. Nothing automatically polls or drains records after restart.
 
-## Background work and results
-
-- Submission/acknowledgement versus completed work: TBD
-- Job status/result delivery to the client: TBD
-- Duplicate/retry/failure behavior visible to the user: TBD
-
-Record inline-only or no-interface cases with reasons. HTTP and message payloads belong in [api-contracts.md](api-contracts.md); schema in [data-model.md](data-model.md); topology and delivery policy in [infrastructure.md](infrastructure.md). Keep a single authority for each. Map agreed interaction cases to [testing.md](testing.md). This phase documents contracts and does not implement components or endpoints.
+Admission permits at most16 active event requests per process. Body/JSON limits, finite DB operations, cancellation-aware vendor attempts/backoff, and a15-second processing cancellation budget bound work. Client disconnect does not prove vendor non-acceptance. Event errors expose correlation IDs and safe categories only. The POC API is host-loopback-only; public authentication/permissions are a later deployment scope.

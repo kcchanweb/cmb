@@ -1,9 +1,17 @@
 import { Pool } from 'pg';
+import { readFile, stat } from 'node:fs/promises';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { parseProfiles } from './events.js';
+import { EventRepository } from './repository.js';
+import { EventService } from './service.js';
+import { VendorClient } from './vendor.js';
 
 async function start(): Promise<void> {
   const config = loadConfig(process.env);
+  if ((await stat(config.profilesPath)).size > 1024 * 1024) throw new Error('Profile source exceeds limit');
+  const rawProfiles: unknown = JSON.parse(await readFile(config.profilesPath, 'utf8'));
+  const profiles = parseProfiles(rawProfiles);
   const pool = new Pool({
     ...config.database,
     max: 5,
@@ -17,13 +25,18 @@ async function start(): Promise<void> {
   });
 
   try {
-    await pool.query('SELECT 1');
+    await pool.query('SELECT e.id, d.status, d.source_hash FROM public.events e LEFT JOIN public.event_deliveries d ON d.event_id=e.id LIMIT 0');
   } catch {
     await pool.end();
     throw new Error('Database startup check failed');
   }
 
-  const app = createApp(async () => { await pool.query('SELECT 1'); });
+  const service = new EventService(new EventRepository(pool), new VendorClient(config.vendorBaseUrl, {
+    timeoutMs: config.vendorTimeoutMs, maxAttempts: config.vendorMaxAttempts, retryBaseMs: 100,
+  }), profiles);
+  const app = createApp(async () => {
+    await pool.query('SELECT e.id, d.status, d.source_hash FROM public.events e LEFT JOIN public.event_deliveries d ON d.event_id=e.id LIMIT 0');
+  }, service, { requestTimeoutMs: config.requestTimeoutMs });
   const server = app.listen(config.port, '0.0.0.0', () => {
     console.log(JSON.stringify({ event: 'api_listening', port: config.port }));
   });
@@ -42,7 +55,7 @@ async function start(): Promise<void> {
     const deadline = setTimeout(() => {
       console.error(JSON.stringify({ event: 'shutdown_timeout' }));
       process.exit(1);
-    }, 10000);
+    }, 20000);
     deadline.unref();
     server.close(() => {
       pool.end().then(() => {

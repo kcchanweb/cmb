@@ -1,38 +1,59 @@
-# Event relay — exercise seed and project scaffold
+# Event relay POC
 
-Project goal: accept events through an API, retain them in PostgreSQL, normalize them, and forward them to the fixed vendor API. Selected POC stack/topology: Node.js/TypeScript API container and PostgreSQL container on one Compose network, with direct calls to the vendor running on the host. Persist and deduplicate by messageId before vendor delivery.
+Express/TypeScript accepts source events, atomically deduplicates/stores them in PostgreSQL, then directly posts the normalized allowlisted payload to the host vendor. Internal row IDs are UUIDs; original messageIds stay unchanged. No queue, fan-out, Lambda, or background consumer is used.
 
-**Status:** product baseline accepted in [docs/prd.md](docs/prd.md); init-project complete. Architecture is in progress; the POC topology is selected. Initial event storage is implemented from the reviewed fields plus a UUID row key; broader data/delivery design is in progress and the incoming event HTTP contract remains open. The explicitly requested Compose setup and Express/TypeScript health skeleton are implemented; the event pipeline is still pending. Initialization creates documentation only; it does not make the project implementation-ready. The original exercise seed below is preserved.
+Application code, migrations, examples, contracts, tests, Dockerfile and Compose files live under app/. The root Makefile executes commands there. The original seed/vendor below remains at the root and vendor.py is unchanged.
 
-See [POC stack](docs/tech-stack.md), [infrastructure](docs/infrastructure.md), [guardrails](docs/guardrails.md), [decisions](docs/decisions.md), [demo goals](docs/demo.md), and [AGENTS.md](AGENTS.md). Phase state and provenance are in `.ai/project.json`. The [logging policy](.ai/config.json) enables sanitized local Markdown summaries under `.ai/sessions/`, ignored by Git; this is not automatic transcript capture.
+## Run
 
-Application code, Dockerfile, tests, and Compose live under `app/`. Run make commands from the project root; recipes execute in `app/`. Existing seed files remain at the root.
-
-## Run the containers
-
-Requirements: Docker with Compose and Python 3 (also used by the supplied vendor).
+Requirements: Docker with Compose and Python3. Run from the project root:
 
 ```sh
-make up                  # creates app/.env once; builds and waits for healthy API/DB
-make db-migrate          # applies the versioned events schema explicitly
-make test-db             # real PostgreSQL constraints; synthetic test rows rolled back
+make vendor              # separate terminal: fixed host vendor on9000
+make up                  # initializes local credentials, starts DB, applies migrations, builds/starts API
 curl http://localhost:3000/health
 curl http://localhost:3000/ready
-make psql                # DB shell inside its container
-make test                # health/readiness/config tests in the pinned Node image
-make logs
-make down                # stops containers; preserves database volume
 ```
 
-To check the host vendor, run `make vendor` in a separate terminal, then `make vendor-check`. The API container uses `host.docker.internal:9000`; PostgreSQL uses `db:5432` on the shared network. PostgreSQL has no published host port. See [environment setup](docs/environment.md) for generated credentials, the vendor's loopback-listener caveat, and the optional Linux Compose override.
+Only API port3000 is published, on host loopback. PostgreSQL is private on the shared network at db:5432. The API reaches the host via host.docker.internal:9000 and mounts profiles.json read-only for UUID resolution. See [environment/configuration](docs/environment.md), [infrastructure](docs/infrastructure.md), and [guardrails](docs/guardrails.md). make down preserves the database volume.
 
-Express currently exposes liveness/readiness endpoints only. The events table has a generated UUID primary key and unique message_id. Event intake, normalization, delivery coordination, and vendor calls remain unimplemented; the unique key alone does not implement end-to-end deduplication. API readiness checks DB connectivity, not a future event schema. `make config` validates Compose without printing secrets; `make build` builds the API image. Frontend/lint/product-E2E Makefile hooks remain guarded.
+## Submit one event
 
-Next: finish the remaining architecture/tooling decisions, then data design and intake contracts before runtime setup. Start a new session for automatic AGENTS discovery; AGENTS.md has been explicitly read and applied in this session.
+Use the original README-style source payload, not the normalized snake-case vendor request:
 
-The user-supplied [vendor contract and sample request](docs/api-contracts.md) restrict forwarding to seven event names. This later requirement supersedes the original all-event-names policy. The preserved seed below describes the stub, which does not itself enforce the name allowlist.
+```sh
+curl -i http://localhost:3000/events   -H 'Content-Type: application/json'   --data-binary @app/examples/source-event.json
+```
 
-See [the event schema and field mapping](docs/data-model.md). Database types preserve source timestamps as timezone-aware instants and nested properties/context as JSONB. The migration is additive, version-guarded, and transactional; make up does not reapply it implicitly.
+Successful new delivery returns201 with eventId, messageId, status=delivered, attempts and vendorStatus. Valid excluded event names are stored as skipped without vendor traffic. Identical repeats return the existing result with duplicate=true (200, or202 for pending/sending); different retained content under the same messageId returns409.
+
+```sh
+curl http://localhost:3000/events/EVENT_UUID
+curl -X POST http://localhost:3000/events/EVENT_UUID/retry
+```
+
+Use the internal eventId UUID from the response for status/retry. Ordinary duplicate intake never starts another send. Explicit retry uses the frozen saved payload for pending/transient/uncertain work or an expired claim. Delivered/skipped/permanent failures are terminal. If the initial response is lost, identical re-submission safely retrieves its saved ID/state.
+
+A 503 EventResult with retryable_failed, vendorStatus500, and attempts3 means input was saved but the vendor failed all attempts. The fixed stub can deliberately stay in500 mode. The original README below shows how to restore mode=ok; then call /events/EVENT_UUID/retry. Repeating the original POST only retrieves its failed record. Inspect status rather than assuming every2xx duplicate response represents delivery.
+
+The API stores required source fields, object properties/context, and a delivery record in one committed transaction before network side effects. It filters to the seven allowed event names, maps numeric/UUID users, omits unmatched customer IDs, uses occurrence timestamp in milliseconds, and excludes raw traits/contact/advertising metadata from the outbound projection. Raw event bodies and vendor errors are not logged or exposed. See the [incoming OpenAPI contract](app/contracts/openapi.json), [vendor contract/example](docs/api-contracts.md), [field mapping](docs/data-model.md), and [interaction flow](docs/interactions.md).
+
+## Checks and database access
+
+```sh
+make test                # pinned Node unit/HTTP tests + real schema + isolated pipeline tests
+make test-integration    # isolated DB: duplicates, failures, retries and recovery
+make test-db             # schema checks with synthetic rows rolled back
+make psql                # application-role DB shell inside db
+make vendor-check        # read-only strict-vendor reachability probe
+make config              # validate Compose without printing credentials
+make logs
+make down
+```
+
+The automated pipeline tests use a separate temporary database and an HTTP test vendor; they do not change the host vendor's controls. A separate strict-stub smoke test also verified six concurrent requests produce one source row and one vendor delivery. The framework is Node's built-in test runner; no browser/frontend is included. The guarded lint/frontend/standalone external-E2E hooks remain unconfigured.
+
+See [decisions](docs/decisions.md), [testing evidence](docs/testing.md), and [AGENTS.md](AGENTS.md). .ai/project.json records facts and phase status without treating the explicit implementation request as acceptance of unrelated production designs. Local sanitized handoffs follow [.ai/config.json](.ai/config.json). Public deployment/auth, retention/deletion policy, and production operations remain outside this local POC.
 
 ## Original exercise seed
 

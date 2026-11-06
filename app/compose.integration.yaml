@@ -1,0 +1,8 @@
+services:
+  api:
+    image: cmb-poc-integration-tests
+    build:
+      target: integration-test
+    command: ["node", "--test", "test/events.integration.mjs"]
+    healthcheck:
+      disable: true

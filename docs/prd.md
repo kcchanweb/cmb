@@ -1,12 +1,12 @@
 # Event relay product brief
 
-Status: accepted product baseline. The user replied “accept” on 2026-11-06 to the proposed scope, normalization policies, and acceptance criteria. Init-project is complete; architecture is in progress; the reviewed initial source-event table is implemented, broader data design is in progress, and incoming event contracts/delivery are unimplemented. The user subsequently authorized a bounded Compose/Express health skeleton, now implemented and verified.
+Status: accepted product baseline. The user replied “accept” on 2026-11-06 to the proposed scope, normalization policies, and acceptance criteria. Init-project is complete; architecture is in progress; the reviewed initial source-event table is implemented, broader data design is in progress, and incoming event/status/retry contracts and direct delivery are now implemented for the explicit local POC request. The user subsequently authorized a bounded Compose/Express health skeleton, now implemented and verified.
 
 ## Problem and audience
 
 The user requests an API endpoint that accepts events, writes them to PostgreSQL, normalizes them, and forwards them to a downstream API. The existing exercise provides mobile analytics events, profile lookup data, and a fixed vendor stub. The intended users are an event-producing client and a developer/operator who needs to verify delivery and diagnose failures. This audience was inferred from the exercise and included in the accepted baseline.
 
-User-supplied stack, verbatim: “Tech stack: node.js/typescript, psql.” Node.js/TypeScript and PostgreSQL are selected. The user subsequently selected separate API/database containers on one shared network with a host-run vendor; Express and the container skeleton versions/configuration are now selected in tech-stack.md. The reviewed source-event fields plus a UUID identifier are now implemented in PostgreSQL. Intake contracts and delivery/recovery state remain open.
+User-supplied stack, verbatim: “Tech stack: node.js/typescript, psql.” Node.js/TypeScript and PostgreSQL are selected. The user subsequently selected separate API/database containers on one shared network with a host-run vendor; Express and the container skeleton versions/configuration are now selected in tech-stack.md. The reviewed source-event fields plus a UUID identifier are now implemented in PostgreSQL. Intake/status/explicit-retry contracts and durable delivery state are now implemented; production auth/retention/operations remain open.
 
 ## Scope and journeys
 
@@ -61,7 +61,7 @@ Additional accepted rules:
 
 ## Observable acceptance criteria
 
-These are accepted requirements for future behavior. The initial persistence constraints are implemented and tested; the end-to-end product behaviors below remain unimplemented and untested; the separate health/configuration skeleton has passed its infrastructure tests.
+These are accepted requirements for future behavior. The initial persistence constraints and the local end-to-end behaviors below are implemented and tested; the separate health/configuration skeleton has passed its infrastructure tests.
 
 | ID | Scenario | Expected observation |
 | --- | --- | --- |
@@ -87,3 +87,5 @@ These are accepted requirements for future behavior. The initial persistence con
 - Next: complete architecture decisions for the selected direct-call/container topology, then design data and intake contracts. Product scaffolding does not establish architecture readiness or a built app.
 
 Source-field review: the user reviewed the README-based field list and requested a UUID table identifier, accepting the rest. The internal id is a database-generated UUID; message_id remains the separately unique source identity. See [data-model.md](data-model.md) for the implemented mapping and deliberately open delivery-state schema.
+
+Implementation evidence: the explicit API build request now exercises these criteria via17 unit/HTTP tests,10 PostgreSQL integration scenarios,24 source-schema checks and a live strict-stub smoke. Valid unsupported events are stored as skipped; explicit retry/status endpoints replace the earlier unspecified recovery mechanism. See testing.md for exact scope and actual results. No production availability/auth/retention claim follows from this local verification.

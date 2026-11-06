@@ -1,76 +1,62 @@
-# Testing strategy
+# Local environment and configuration
 
-## POC verification scope
+API and PostgreSQL run in separate containers on one Compose bridge network; the vendor runs on the host. Compose and app source live in app/. Run make commands from the project root; underlying commands execute from app/.
 
-The selected topology is containerized API → PostgreSQL → direct host-vendor calls, with no queue, worker, fan-out, DLQ, or batching. The frontend is absent; no frontend/browser suite is required. Node built-in tests are selected for the infrastructure skeleton; product integration/HTTP pipeline coverage remains unconfigured.
+make init creates app/.env once with distinct random 64-character hexadecimal database passwords and mode 0600. make up invokes it automatically. Existing configuration is preserved. app/.env is ignored by Git and excluded from the Docker build context. app/.env.example is a sanitized template, not a credential source for shared deployment.
 
-Required later checks: all seven allowed names eligible and excluded names never forwarded, independent of stub permissiveness; normalized payload/identity/privacy cases; database commit before send; persistent unique messageId identity; identical and concurrent duplicates causing no extra vendor sends; changed-content conflicts; bounded transient retries and permanent failures; uncertain vendor acceptance; outcome-write failure; explicit recovery after restart; API-to-db service DNS; API-to-host vendor route despite the stub loopback binding; readiness and database-volume persistence. Use isolated DB data and keep vendor strict enabled. Actual setup verification is recorded below; full product checks remain pending.
-
-## Framework selections and setup
-
-Automated testing is required for every applicable component. design-architecture chooses frontend/backend frameworks separately after the stack, preserving established choices, and offers E2E including Playwright for suitable web projects. Absent layers and E2E deferrals need reasons. These choices block architecture acceptance when unresolved, not product-scaffold completion. setup-dev configures harnesses; separately authorized implementation adds business tests. Time pressure does not silently choose or omit tooling.
-
-Record exact versions and helper libraries in [tech-stack.md](tech-stack.md). For CLI, mobile, or other component types, replace or extend the rows with the appropriate automated test tooling. A shared runner may cover multiple layers; identify each scope.
-
-| Component | Selected framework and helpers | Test location under app/ | Command and working directory | Setup / execution status |
-| --- | --- | --- | --- | --- |
-| Frontend unit / component | Not applicable: API-only POC | Not applicable | Not applicable | No frontend implemented or planned in this slice |
-| Backend infrastructure | Node built-in test runner | app/test/setup.test.mjs | make test from root; npm test from app/ optionally | Five health/config tests passed on host and pinned container Node |
-| End-to-end journeys | TBD | TBD | TBD | Planned; select framework or record deferral / not-applicable reason |
-
-setup-dev includes test dependencies/configuration and noninteractive harness commands; a health-only skeleton may include a real health test. Keep product-journey checks planned until application implementation exists. Keep tests/configuration under app/ and preserve existing suites. The root Makefile exposes test-frontend/test-backend/test-e2e; configure make test for runnable suites and document pending exclusions. Run make from the root; recipes execute tools from app/ or component directories. Document prerequisites, startup, fixtures, and cleanup. Mirror targets in README, distinguishing harness readiness, planned checks, and actual results.
-
-## Required coverage
-
-- Map every implemented PRD acceptance criterion to an automated test or a documented manual check.
-- Cover critical business rules, permission boundaries, input validation, edge cases, and meaningful failure paths.
-- Add a regression test for reproducible behavioral bugs when feasible.
-- Verify changed API contracts on both provider and consumer sides.
-- Verify schema constraints/migrations against [data-model.md](data-model.md). When asynchronous work is selected, cover relevant producer/consumer contracts, duplicates/idempotency, retry, and terminal-failure paths from [infrastructure.md](infrastructure.md) using isolated resources.
-- Select approved tooling in tech-stack.md during design-architecture. Set numerical coverage targets only when useful or required; percentages supplement behavioral evidence.
-
-## Test layers
-
-| Layer | Scope | Dependencies | Required focus |
+| Variable | Type / validation | Source / default | Secret? |
 | --- | --- | --- | --- |
-| Unit | A function, domain rule, or isolated component | Stub external boundaries; no network or real database | Logic branches, invariants, validation, and edge cases |
-| Integration | Collaborating modules, API handlers, persistence, and adapters | Use isolated real database/services where practical; mock external third-party APIs | Serialization, authorization, queries, constraints, migrations, transactions, and error translation |
-| End-to-end | Critical user journeys through the running application | Controlled test environment and test accounts | Essential acceptance criteria and cross-layer behavior |
+| POSTGRES_PASSWORD | Nonempty string | Generated app/.env; PostgreSQL bootstrap administrator only | Yes |
+| APP_DB_PASSWORD | Nonempty string | Generated app/.env; initializes event_relay_app and supplies API PGPASSWORD | Yes |
+| API_PORT | Host TCP port 1–65535 | app/.env; 3000; published only on 127.0.0.1 | No |
+| VENDOR_BASE_URL | HTTP(S) origin; no credentials, path beyond /, query, or fragment | app/.env; http://host.docker.internal:9000 | No; must never contain credentials |
+| NODE_ENV | String | Compose sets production | No |
+| PORT | Integer 1–65535 | Compose sets 3000, API binds 0.0.0.0 within container | No |
+| PGHOST | Nonempty string | Compose sets db | No |
+| PGPORT | Integer 1–65535 | Compose sets 5432 | No |
+| PGDATABASE | Nonempty string | Compose sets event_relay | No |
+| PGUSER | Nonempty string | Compose sets event_relay_app (non-superuser) | No |
+| PGPASSWORD | Nonempty string | Compose supplies APP_DB_PASSWORD to API | Yes |
+| POSTGRES_DB | Nonempty string | Compose sets event_relay for DB initialization | No |
+| POSTGRES_USER | Nonempty string | Compose sets postgres for DB bootstrap; never the API user | No |
 
-## External API mocking standards
+The API validates its runtime settings before listening. The pool is bounded to 5 connections with 2-second connection timeout, 10-second idle timeout, 3-second statement timeout and 3.5-second client query timeout. The read-only vendor probe has a 3-second total timeout and does not follow redirects. These are infrastructure controls, not a product delivery policy.
 
-1. Mock at the network or adapter boundary, not inside domain logic.
-2. Derive sanitized fixtures from approved provider contracts; keep first-party mocks aligned with api-contracts.md.
-3. Cover success, malformed responses, permission failures, rate limits, timeouts, and transient failures as relevant.
-4. Block unexpected outbound requests in automated tests. Never call production services or use production credentials.
-5. Make clocks, randomness, retry timing, and identifiers deterministic where needed.
-6. Keep any live provider checks separate and explicitly configured against a sandbox; mocks alone do not prove provider compatibility.
+## Persistence and credentials
 
-## Isolation and execution
+The PostgreSQL 18 named volume mounts at /var/lib/postgresql. db/init-app-role.sql runs only when that volume is first initialized; it creates the non-superuser application role and grants database/schema access. It creates no event tables; the reviewed source-event schema is applied separately by make db-migrate. That migration is transactional and version-guarded, so it also upgrades an existing volume without recreating it. Do not remove app/.env while retaining the volume: generating new passwords does not rotate passwords in an existing database. Rotate explicitly through PostgreSQL if needed; never discard the volume as an ordinary troubleshooting step.
 
-- Give tests independent data and clean up resources; avoid order dependence.
-- Run linting, type checks, affected unit tests, and relevant integration tests for code changes.
-- Run critical end-to-end journeys for changes affecting those flows.
-- Record exact commands, outcomes, and skipped checks. Do not report unrun tests as passing.
-- Verify representative tests are discovered and executed; empty suites and placeholder assertions do not verify behavior.
-- Configure CI commands and thresholds after selecting the stack; document executable commands in README.md.
+Use make psql to inspect the database without publishing its port. Ordinary make down preserves the named volume. Destructive volume deletion is never part of ordinary stop/start commands.
 
-## Runnable infrastructure checks
+## Vendor routing
 
-- make config: validate Compose quietly, after preserving/initializing ignored local credentials.
-- make build: compile TypeScript and build the non-root API runtime image.
-- make test: Docker test target uses the pinned Node image and runs five real HTTP/configuration tests. Covers liveness during DB failure, readiness failure/recovery and redaction, unknown-route error shape, required config/port validation, and safe vendor-origin parsing.
-- Optional host workflow from app/: npm ci, npm run typecheck, npm test. Host Node must satisfy package.json engines; use .nvmrc for the pinned runtime.
-- After make up: GET /health and GET /ready, inspect the application DB role, verify PostgreSQL restart/volume persistence, and make vendor-check with the strict host vendor running. The vendor probe is read-only.
+Start the fixed host process with make vendor in a separate terminal. Docker Desktop supplies host.docker.internal. The API uses http://host.docker.internal:9000; localhost inside api refers to api, not the host. See [infrastructure.md](infrastructure.md) for the loopback-binding caveat. make vendor-check performs only GET /_stats from the API container and requires strict=true; it never sends events or changes vendor controls.
 
-Source-event schema tests now verify row identity, unique message_id, types and constraints against PostgreSQL. Incoming ingestion/duplicate-dispatch, normalization, delivery, and replay features and their tests remain unimplemented. Skeleton readiness proves a real DB SELECT 1 only, not a future schema. The container build/test and runtime observations are recorded in .ai/project.json and the local handoff summary after execution.
+For plain Linux Engine, use the optional app/compose.linux.yaml override to map the host gateway. A loopback-only host listener may still require the restricted host relay described in infrastructure.md. Override VENDOR_BASE_URL to the relay's origin only when required; document its actual binding and cleanup. Do not make vendor controls publicly reachable.
 
-Observed setup results: both Compose services healthy; app DB role is non-superuser and API UID is 1000; fresh-volume SQL bootstrap passed in a disposable project; strict vendor GET /_stats succeeded from api; DB stop produced /ready 503 while /health stayed 200; restart restored readiness with unchanged database cluster identity. Base and Linux-override Compose configurations validate; Linux runtime networking itself has not been exercised. Main services remain running; only the isolated bootstrap-check project/volume was removed.
+Local HTTP is intentional for the exercise. Production secrets delivery, TLS, retention, and public access are outside this bounded setup.
 
-Contract examples: parse and type-check [vendor-request.example.json](vendor-request.example.json) against the supplied descriptive [contract snapshot](vendor-payload-contract.json). This is a static consistency check, not evidence that relay filtering or delivery exists. Later runtime tests must also cover unknown fields, omitted versus null optional fields, seconds versus millisecond timestamps, customer-ID mapping, and repeated messageIds.
+## Event API settings
 
-## Source-event schema regression
+| Variable | Default / validation | Purpose |
+| --- | --- | --- |
+| PROFILES_PATH | /app/data/profiles.json; readable valid lookup file, max1MiB | Compose mounts root profiles.json read-only. Loaded and validated once at startup; invalid/unavailable source fails startup rather than acting as an empty map. |
+| VENDOR_TIMEOUT_MS | 2000; integer20–5000 | Timeout for each direct vendor attempt. |
+| VENDOR_MAX_ATTEMPTS | 3; integer1–5 | Per-request attempt bound; durable attempts remains cumulative across explicit retries. |
+| REQUEST_TIMEOUT_MS | 15000; integer1000–20000 | Processing cancellation budget; cancels vendor calls/backoff. DB operations/final outcome recording are separately bounded/awaited. |
 
-Run make db-migrate after the DB is up, then make test-db. Migration SQL runs through psql as the application role. The schema-test Docker target and compose.test.yaml run the existing pg dependency in a disposable container, with the main database and API kept running. All test data is synthetic and rolled back in a finally block. No vendor requests are made.
+Fixed controls:64KiB JSON body, nesting20, vendor response8KiB,16 active event routes, retry jitter base100ms/cap1000ms and rate-limit waits capped5seconds within cancellation budget,60-second claim lease. API drains up to20seconds on shutdown; Compose grace25seconds. These are POC implementation choices recorded with the user's explicit build request, not production SLO claims.
 
-Actual result: 24 checks passed first in an isolated database and then on the migrated POC database. Covers generated/distinct UUIDs; unique message_id and primary key; nonblank/non-null source identifiers and names; numeric/UUID/anonymous users; nullable receipt time/objects; JSONB and timestamp round trips; invalid JSON object shapes; infinite timestamps. The migration re-run was a no-op with one recorded version; the isolated DB was dropped and no test rows remain. The API /ready remained healthy. These tests do not verify full duplicate-dispatch prevention or replay.
+Before API startup, migrations001/002 must exist; readiness checks access to the source/delivery tables and columns. make up orchestrates DB readiness → migrations → API startup; health remains independent. Changing a local .env setting takes effect after recreating api. No application setting may be sourced from an incoming request, especially the vendor URL.
+
+## Implemented event endpoint checks
+
+Actual results:17 unit/HTTP/config tests pass on host Node and pinned Node24, plus10 real-PostgreSQL/HTTP integration scenarios (11 node:test entries including parent). Coverage includes all seven allowed names, projection/privacy, numeric/mapped/missing/anonymous IDs, real calendar/timestamp validation and microsecond canonicalization, invalid body/Unicode/depth/types, same-content identity, conflict rejection, admission overload, bounded vendor retries/rate delays, invalid/oversized acknowledgements and permanent failure classification.
+
+make test now invokes the selected unit, schema and isolated integration suites. make test-integration uses scripts/test-integration.py to create a fresh app-owned DB, apply001/002, run the integration-test Docker target against a test HTTP vendor, and forcibly drop only its own DB in finally. No host-vendor controls or user records are changed by that automated suite.
+
+The integration scenarios verify: eight identical concurrent requests → one row/one vendor call; safe status/409 conflict; mapped/unmatched/anonymous delivery; persisted skip; terminal422; transient retention plus explicit retry using a frozen profile mapping;429/timeouts; a deferred failed COMMIT with zero sends; accepted vendor plus failed outcome write without duplicate intake resend; pending/expired claim recovery with stale-token rejection; and protected legacy rows. All SQL fault triggers run only in the isolated test DB.
+
+A separate smoke check against an unchanged strict vendor.py instance on host19001 passed: six concurrent source requests produced one source row, one accepted vendor delivery, zero schema rejections, and zero duplicate vendor deliveries. That opt-in smoke script retains its synthetic source record. The main host vendor9000 was in500 mode; actual API verification retained its three failed attempts and returned the same record on duplicate requests, including after an API process restart. Source rows created by user curls were preserved. Global vendor counters include other user activity; dedup evidence is tied to each event and its durable attempt count.
+
+Full pipeline tests use Node core HTTP/test and the existing pg dependency; no added framework/queue/cloud service is required. Public deployment/auth, production load/SLOs and retention/delete policies have not been tested or implemented. Remaining historical planned sections above are superseded where these actual checks now provide coverage.
